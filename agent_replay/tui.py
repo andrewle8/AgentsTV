@@ -78,6 +78,9 @@ class ReplayTUI:
         self.live_file = live_file
         self._last_reload = 0.0
         self.filter_noise = False  # Toggle to hide tool_results and dim text
+        self.log_view = False  # Full-screen scrollable log
+        self.log_scroll = 0  # Scroll offset in log view
+        self.full_log: list[tuple[EventType, Text]] = []  # Unlimited log for scroll view
 
     def run(self) -> None:
         """Main loop — render with Rich Live, handle keyboard input."""
@@ -112,6 +115,10 @@ class ReplayTUI:
                                     key_queue.append("left")
                                 elif ch2 == "M":
                                     key_queue.append("right")
+                                elif ch2 == "H":
+                                    key_queue.append("up")
+                                elif ch2 == "P":
+                                    key_queue.append("down")
                             else:
                                 key_queue.append(ch)
                         else:
@@ -134,6 +141,10 @@ class ReplayTUI:
                                         key_queue.append("left")
                                     elif ch3 == "C":
                                         key_queue.append("right")
+                                    elif ch3 == "A":
+                                        key_queue.append("up")
+                                    elif ch3 == "B":
+                                        key_queue.append("down")
                             else:
                                 key_queue.append(ch)
                     finally:
@@ -153,8 +164,28 @@ class ReplayTUI:
                 while key_queue:
                     k = key_queue.pop(0)
                     if k == "q":
-                        stop_flag.set()
-                        return
+                        if self.log_view:
+                            self.log_view = False
+                        else:
+                            stop_flag.set()
+                            return
+                    elif k == "v" or (k == "\x1b" and self.log_view):
+                        self.log_view = not self.log_view
+                        if self.log_view:
+                            # Snap scroll to bottom
+                            self.log_scroll = max(0, len(self.full_log) - 30)
+                    elif self.log_view:
+                        # In log view: up/down/pgup/pgdn scroll
+                        if k == "up":
+                            self.log_scroll = max(0, self.log_scroll - 1)
+                        elif k == "down":
+                            self.log_scroll = min(len(self.full_log) - 1, self.log_scroll + 1)
+                        elif k == "H":  # PgUp (shift not needed, we'll use H/L)
+                            self.log_scroll = max(0, self.log_scroll - 20)
+                        elif k == "L":  # PgDn
+                            self.log_scroll = min(len(self.full_log) - 1, self.log_scroll + 20)
+                        elif k == " ":
+                            self.playing = not self.playing
                     elif k == " ":
                         self.playing = not self.playing
                     elif k in "1234":
@@ -212,6 +243,7 @@ class ReplayTUI:
             return
         target = self.current_idx - 1
         self.log_lines.clear()
+        self.full_log.clear()
         self.files_touched.clear()
         self.agent_tokens.clear()
         self.agent_cache_tokens.clear()
@@ -312,6 +344,7 @@ class ReplayTUI:
         if total_tok > 0:
             line.append(f"  +{_fmt_tokens(total_tok)} tok", style="bold yellow")
 
+        self.full_log.append((event.type, line))
         self.log_lines.append((event.type, line))
         if len(self.log_lines) > self.max_log_lines:
             self.log_lines = self.log_lines[-self.max_log_lines :]
@@ -330,6 +363,16 @@ class ReplayTUI:
     def _build_layout(self) -> Layout:
         """Build the full TUI layout."""
         layout = Layout()
+
+        if self.log_view:
+            layout.split_column(
+                Layout(name="log", ratio=1),
+                Layout(name="status", size=3),
+            )
+            layout["log"].update(self._render_full_log())
+            layout["status"].update(self._render_status())
+            return layout
+
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main", ratio=1),
@@ -414,6 +457,35 @@ class ReplayTUI:
             title=f"[bold bright_white] EVENT LOG [/bold bright_white]{filter_label}",
             border_style="bright_black",
             subtitle=f"[dim]{len(self.session.events)} events[/dim]",
+        )
+
+    def _render_full_log(self) -> Panel:
+        """Render full-screen scrollable log view."""
+        text = Text()
+        source = self.full_log
+        if self.filter_noise:
+            source = [(t, l) for t, l in source if t not in self.NOISE_TYPES]
+
+        # Clamp scroll
+        visible_height = max(self.console.height - 8, 10)
+        max_scroll = max(0, len(source) - visible_height)
+        self.log_scroll = max(0, min(self.log_scroll, max_scroll))
+
+        window = source[self.log_scroll : self.log_scroll + visible_height]
+        for i, (_, line) in enumerate(window):
+            # Line number
+            line_num = self.log_scroll + i + 1
+            text.append(f" {line_num:4d} ", style="dim")
+            text.append_text(line)
+            if i < len(window) - 1:
+                text.append("\n")
+
+        pos = f"{self.log_scroll + 1}-{self.log_scroll + len(window)}/{len(source)}"
+        return Panel(
+            text,
+            title="[bold bright_white] FULL LOG [/bold bright_white]  [dim]↑↓=scroll  v/q=close[/dim]",
+            border_style="cyan",
+            subtitle=f"[dim]{pos}[/dim]",
         )
 
     def _render_agents(self) -> Panel:
