@@ -284,18 +284,28 @@ async def viewer_chat(session_id: str):
         if not buf:
             # Try to generate a batch from LLM
             try:
-                real_path = _path_map.get(session_id, session_id)
-                file_path = Path(real_path)
-                if not file_path.exists():
-                    summaries = scan_sessions(DATA_DIR)
-                    for s in summaries:
-                        if s.id == session_id or s.file_path == session_id:
-                            file_path = Path(s.file_path)
-                            break
+                context = None
+                if session_id == "__master__":
+                    # Build context from aggregated master events
+                    master_data = await get_master()
+                    context = _build_context(master_data, n=10)
+                else:
+                    real_path = _path_map.get(session_id, session_id)
+                    file_path = Path(real_path)
+                    if not file_path.exists():
+                        summaries = scan_sessions(DATA_DIR)
+                        for s in summaries:
+                            if s.id == session_id or s.file_path == session_id:
+                                file_path = Path(s.file_path)
+                                break
 
-                if file_path.exists():
-                    session = parse(file_path)
-                    context = _build_context(_redact_session(session.to_dict()))
+                    if file_path.exists():
+                        session = parse(file_path)
+                        context = _build_context(
+                            _redact_session(session.to_dict())
+                        )
+
+                if context:
                     messages, llm_error = await llm.generate_viewer_messages(
                         context, count=10
                     )
