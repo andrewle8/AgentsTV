@@ -562,6 +562,17 @@ def main(args: list[str] | None = None) -> None:
         DATA_DIR = Path(__file__).parent.parent / "examples"
         PUBLIC_MODE = True
 
+    # Check if port is already in use before starting
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((host, port))
+    except OSError:
+        print(f"agent-replay: port {port} is already in use. Kill the existing process or use --port <PORT>.")
+        sys.exit(1)
+    finally:
+        sock.close()
+
     url = f"http://{host}:{port}"
     mode = " (PUBLIC MODE — secrets redacted)" if PUBLIC_MODE else ""
     print(f"agent-replay v{__version__} — starting at {url}{mode}")
