@@ -470,6 +470,13 @@ body {
 }
 
 /* Chat log (event log styled as Twitch chat) */
+.chat-log-wrapper {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
 .chat-log {
     flex: 1;
     overflow-y: auto;
@@ -478,6 +485,25 @@ body {
     font-size: 12px;
     min-height: 0;
 }
+.scroll-bottom-btn {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--purple);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    opacity: 0.9;
+    transition: opacity 0.2s;
+}
+.scroll-bottom-btn:hover { opacity: 1; }
 
 .chat-msg {
     padding: 3px 14px;

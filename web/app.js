@@ -2204,6 +2204,7 @@ function drawControlRoom(canvas, frame) {
 
 function setupScrollListener() {
     const log = document.getElementById('event-log');
+    const scrollBtn = document.getElementById('scroll-bottom-btn');
     if (log && !log.dataset.scrollBound) {
         log.dataset.scrollBound = '1';
         log.addEventListener('scroll', () => {
@@ -2211,8 +2212,18 @@ function setupScrollListener() {
             if (state.autoScroll) {
                 const badge = document.getElementById('new-events-badge');
                 if (badge) badge.style.display = 'none';
+                if (scrollBtn) scrollBtn.style.display = 'none';
+            } else {
+                if (scrollBtn) scrollBtn.style.display = 'block';
             }
         }, { passive: true });
+    }
+    if (scrollBtn) {
+        scrollBtn.onclick = () => {
+            log.scrollTop = log.scrollHeight;
+            state.autoScroll = true;
+            scrollBtn.style.display = 'none';
+        };
     }
 }
 
