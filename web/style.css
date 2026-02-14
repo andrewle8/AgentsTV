@@ -1008,9 +1008,23 @@ select.settings-input { cursor: pointer; }
 .chat-msg.llm-reply .chat-text {
     color: var(--text);
 }
-.chat-msg.llm-loading .chat-text {
-    color: var(--text-muted);
-    font-style: italic;
+/* Thinking pulse on disabled input */
+.chat-input.thinking:disabled {
+    animation: thinkingPulse 1.5s ease-in-out infinite;
+}
+@keyframes thinkingPulse {
+    0%, 100% { border-color: var(--border); opacity: 0.5; }
+    50% { border-color: var(--purple); opacity: 0.8; }
+}
+
+/* Narrator (caster_bot) messages */
+.chat-msg.narrator-chat {
+    border-left: 3px solid var(--gold);
+    padding-left: 11px;
+    background: rgba(255, 215, 0, 0.04);
+}
+.chat-msg.narrator-chat .chat-text {
+    color: var(--text);
 }
 
 /* Ask about this button inside expanded events */

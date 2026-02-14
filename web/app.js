@@ -73,6 +73,7 @@ let state = {
     sessionFilePath: '',  // for localStorage key
     chatFullscreen: false,
     viewerChatTimer: null,
+    narratorChatTimer: null,
     monitorContent: null,  // latest code/text to show on monitor
     monitorContentType: null, // event type for styling
     llmEnabled: true,         // LLM on/off toggle
@@ -192,9 +193,10 @@ async function saveSettings(e) {
         state.llmEnabled = body.provider !== 'off';
         syncLlmToggleUI();
         if (!state.llmEnabled) {
-            stopViewerChat();
+            stopNarratorChat();
         } else if (state.view === 'session' || state.view === 'master') {
-            startViewerChat();
+            fetchViewerChatBatch();
+            startNarratorChat();
         }
         msg.textContent = 'Saved';
         msg.className = 'settings-msg ok';
@@ -251,9 +253,10 @@ let _previousProvider = 'ollama';
             state.llmEnabled = !state.llmEnabled;
             syncLlmToggleUI();
             if (!state.llmEnabled) {
-                stopViewerChat();
+                stopNarratorChat();
             } else if (state.view === 'session' || state.view === 'master') {
-                startViewerChat();
+                fetchViewerChatBatch();
+                startNarratorChat();
             }
         } catch (e) {
             // silently fail
@@ -291,13 +294,9 @@ let _previousProvider = 'ollama';
             + `<span class="chat-text">${esc(msg)}</span>`;
         log.appendChild(userDiv);
 
-        // Add loading indicator
-        const loadDiv = document.createElement('div');
-        loadDiv.className = 'chat-msg llm-reply llm-loading';
-        loadDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
-            + `<span class="chat-name" style="color:var(--green)">assistant</span>`
-            + `<span class="chat-text">thinking...</span>`;
-        log.appendChild(loadDiv);
+        // Show thinking state in input bar
+        input.placeholder = 'thinking...';
+        input.classList.add('thinking');
         if (state.autoScroll) log.scrollTop = log.scrollHeight;
 
         // Build request
@@ -316,7 +315,6 @@ let _previousProvider = 'ollama';
                 body: JSON.stringify(body),
             });
             const data = await resp.json();
-            loadDiv.remove();
 
             const replyDiv = document.createElement('div');
             replyDiv.className = 'chat-msg llm-reply';
@@ -331,7 +329,6 @@ let _previousProvider = 'ollama';
             }
             log.appendChild(replyDiv);
         } catch (e) {
-            try { loadDiv.remove(); } catch (_) {}
             const errDiv = document.createElement('div');
             errDiv.className = 'chat-msg llm-reply';
             errDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
@@ -343,6 +340,8 @@ let _previousProvider = 'ollama';
             state.replyToEventIndex = null;
             if (replyPreview) replyPreview.style.display = 'none';
             input.disabled = false;
+            input.placeholder = 'Ask about this stream...';
+            input.classList.remove('thinking');
             sendBtn.disabled = false;
             input.focus();
             if (state.autoScroll) log.scrollTop = log.scrollHeight;
@@ -1943,24 +1942,69 @@ const VIEWER_MESSAGES = [
 
 function startViewerChat() {
     stopViewerChat();
-    if (!state.llmEnabled) return;
-    // Pre-fetch LLM messages so they're ready when needed
-    fetchViewerChatBatch();
+    // Pre-fetch LLM messages if enabled
+    if (state.llmEnabled) fetchViewerChatBatch();
     function scheduleNext() {
         const delay = 4000 + Math.random() * 12000; // 4-16s between messages
         state.viewerChatTimer = setTimeout(() => {
-            if (!state.llmEnabled) { stopViewerChat(); return; }
             addViewerChatMessage();
             scheduleNext();
         }, delay);
     }
     scheduleNext();
+    // Also start narrator if LLM is on
+    if (state.llmEnabled) startNarratorChat();
 }
 
 function stopViewerChat() {
     if (state.viewerChatTimer) {
         clearTimeout(state.viewerChatTimer);
         state.viewerChatTimer = null;
+    }
+    stopNarratorChat();
+}
+
+// Narrator bot — play-by-play commentator (LLM only)
+function startNarratorChat() {
+    stopNarratorChat();
+    if (!state.llmEnabled) return;
+    function scheduleNext() {
+        const delay = 15000 + Math.random() * 25000; // 15-40s between messages
+        state.narratorChatTimer = setTimeout(() => {
+            if (!state.llmEnabled) { stopNarratorChat(); return; }
+            addNarratorMessage();
+            scheduleNext();
+        }, delay);
+    }
+    scheduleNext();
+}
+
+function stopNarratorChat() {
+    if (state.narratorChatTimer) {
+        clearTimeout(state.narratorChatTimer);
+        state.narratorChatTimer = null;
+    }
+}
+
+async function addNarratorMessage() {
+    const log = document.getElementById('event-log');
+    if (!log || !state.sessionFilePath) return;
+
+    try {
+        const resp = await fetch('/api/narrator/' + encodeURIComponent(state.sessionFilePath));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.message) return;
+
+        const div = document.createElement('div');
+        div.className = 'chat-msg narrator-chat';
+        div.innerHTML = `<span class="chat-badge">\uD83C\uDFA4</span>`
+            + `<span class="chat-name" style="color:var(--gold)">caster_bot</span>`
+            + `<span class="chat-text">${esc(data.message)}</span>`;
+        log.appendChild(div);
+        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    } catch (e) {
+        // narrator unavailable, skip silently
     }
 }
 
@@ -2073,15 +2117,49 @@ function addRandomViewerTip(log) {
     }, 800 + Math.random() * 1200);
 }
 
+function buildStreamTitle(session) {
+    if (!session) return 'Coding \u00b7 Claude Code';
+    const events = (session.events || []).slice(-5);
+    const extMap = {
+        '.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript', '.tsx': 'React',
+        '.jsx': 'React', '.rs': 'Rust', '.go': 'Go', '.java': 'Java',
+        '.rb': 'Ruby', '.cpp': 'C++', '.c': 'C', '.cs': 'C#',
+        '.html': 'HTML', '.css': 'CSS', '.sh': 'Shell', '.md': 'Markdown',
+        '.json': 'JSON', '.yaml': 'YAML', '.yml': 'YAML', '.toml': 'TOML',
+        '.sql': 'SQL', '.swift': 'Swift', '.kt': 'Kotlin', '.php': 'PHP',
+    };
+    let activity = null;
+    let language = null;
+    for (const evt of events.reverse()) {
+        const t = evt.type;
+        if (!activity) {
+            if (t === 'file_create' || t === 'file_update') activity = 'Coding';
+            else if (t === 'bash') activity = 'Terminal';
+            else if (t === 'think') activity = 'Planning';
+            else if (t === 'web_search') activity = 'Research';
+        }
+        if (!language && evt.file_path) {
+            const dot = evt.file_path.lastIndexOf('.');
+            if (dot !== -1) {
+                const ext = evt.file_path.slice(dot).toLowerCase();
+                if (extMap[ext]) language = extMap[ext];
+            }
+        }
+        if (activity && language) break;
+    }
+    const parts = [];
+    if (activity) parts.push(activity);
+    if (language) parts.push(language);
+    if (session.branch) parts.push(session.branch);
+    return parts.length > 0 ? parts.join(' \u00b7 ') : 'Coding \u00b7 Claude Code';
+}
+
 function renderSession() {
     const s = state.session;
     if (!s) return;
 
     document.getElementById('session-slug').textContent = s.slug || 'AgentsTV Stream';
-    const meta = [];
-    if (s.version) meta.push(`v${s.version}`);
-    if (s.branch) meta.push(`⎇ ${s.branch}`);
-    document.getElementById('session-meta').textContent = meta.join(' · ') || 'Coding · Claude Code';
+    document.getElementById('session-meta').textContent = buildStreamTitle(s);
 
     renderViewerCount();
     renderDonationGoal();
@@ -2371,6 +2449,7 @@ function connectSessionWS(filePath) {
             updateChatCounters(state.session);
             renderMods(state.session);
             renderDonationGoal();
+            document.getElementById('session-meta').textContent = buildStreamTitle(state.session);
 
             if (atBottom) {
                 log.scrollTop = log.scrollHeight;

@@ -192,6 +192,7 @@ async def put_settings(request: Request):
         openai_model=body.get("openai_model"),
     )
     _chat_buffers.clear()
+    _narrator_buffers.clear()
     return llm.get_settings()
 
 
@@ -223,6 +224,10 @@ async def get_session(session_id: str):
 # Buffer of pre-generated viewer chat messages per session
 _chat_buffers: dict[str, list[dict]] = {}
 _chat_lock = asyncio.Lock()
+
+# Buffer of pre-generated narrator messages per session
+_narrator_buffers: dict[str, list[str]] = {}
+_narrator_lock = asyncio.Lock()
 
 VIEWER_NAMES = [
     'viewer_42', 'code_fan99', 'pixel_dev', 'stream_lurker', 'bug_hunter',
@@ -292,6 +297,43 @@ async def viewer_chat(session_id: str):
 
     # Fallback — empty means client should use hardcoded messages
     return {"name": "", "message": ""}
+
+
+@app.get("/api/narrator/{session_id:path}")
+async def narrator_chat(session_id: str):
+    """Return a generated narrator commentary message for the session."""
+    async with _narrator_lock:
+        buf = _narrator_buffers.get(session_id, [])
+
+        if not buf:
+            try:
+                real_path = _path_map.get(session_id, session_id)
+                file_path = Path(real_path)
+                if not file_path.exists():
+                    summaries = scan_sessions(DATA_DIR)
+                    for s in summaries:
+                        if s.id == session_id or s.file_path == session_id:
+                            file_path = Path(s.file_path)
+                            break
+
+                if file_path.exists():
+                    session = parse(file_path)
+                    context = _build_context(
+                        _redact_session(session.to_dict()), n=10
+                    )
+                    messages = await llm.generate_narrator_messages(context, count=3)
+                    if messages:
+                        buf = list(messages)
+                        _narrator_buffers[session_id] = buf
+            except Exception:
+                pass
+
+        if buf:
+            item = buf.pop(0)
+            _narrator_buffers[session_id] = buf
+            return {"message": item}
+
+    return {"message": ""}
 
 
 @app.websocket("/ws/session/{session_id:path}")

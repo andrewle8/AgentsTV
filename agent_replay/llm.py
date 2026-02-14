@@ -18,10 +18,17 @@ SYSTEM_PROMPT = (
 )
 
 SYSTEM_PROMPT_EXPLAIN = (
-    "You are a concise coding assistant explaining what an AI agent is doing. "
-    "Answer the user's question about the agent's actions in 2-4 sentences. "
-    "Be specific and reference the actual code, tool, or file when relevant. "
-    "Keep it conversational but informative."
+    "You are a brief coding stream commentator. When asked about an AI agent's actions, "
+    "explain what it DID in 1-2 short sentences. Focus on the actual code, file, or "
+    "command — not the agent's thought process. Never describe yourself. If no specific "
+    "event context is provided, say what the agent has been working on recently."
+)
+
+SYSTEM_PROMPT_NARRATOR = (
+    "You are an enthusiastic esports-style commentator narrating a live AI coding stream. "
+    "Give play-by-play commentary on what just happened. Be dramatic but brief (1-2 sentences). "
+    "Use present tense. Reference specific files, tools, or actions. "
+    "Return a JSON array of 3 strings, nothing else."
 )
 
 # Provider config — set via env vars or CLI flags
@@ -119,6 +126,29 @@ async def generate_interactive_reply(
     except Exception:
         log.debug("Interactive LLM call failed", exc_info=True)
         return ""
+
+
+async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
+    """Generate narrator play-by-play messages using the configured LLM provider.
+
+    Returns a list of strings, or an empty list on failure.
+    """
+    if LLM_PROVIDER == "off":
+        return []
+
+    user_prompt = (
+        f"Here is what the AI coder just did:\n{context}\n\n"
+        f"Generate {count} dramatic play-by-play commentary lines about this."
+    )
+
+    try:
+        if LLM_PROVIDER == "openai":
+            return await _call_openai(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
+        else:
+            return await _call_ollama(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
+    except Exception:
+        log.debug("Narrator LLM call failed", exc_info=True)
+        return []
 
 
 async def _call_ollama(
