@@ -14,6 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import llm
 from .parser import parse
 from .scanner import scan_sessions
 
@@ -133,6 +134,80 @@ async def get_session(session_id: str):
         return {"error": "Session not found"}
     session = parse(file_path)
     return _redact_session(session.to_dict())
+
+
+# Buffer of pre-generated viewer chat messages per session
+_chat_buffers: dict[str, list[dict]] = {}
+_chat_lock = asyncio.Lock()
+
+VIEWER_NAMES = [
+    'viewer_42', 'code_fan99', 'pixel_dev', 'stream_lurker', 'bug_hunter',
+    'git_pusher', 'regex_queen', 'null_ptr', 'sudo_user', 'mr_merge',
+    'debug_diva', 'pr_approved', 'stack_overflow', 'tab_hoarder', 'vim_exit',
+    'semicolon_sam', 'async_anna', 'monorepo_mike', 'lint_error', 'deploy_dan',
+]
+
+
+def _build_context(session_data: dict, n: int = 5) -> str:
+    """Build a context string from the last N events of a session."""
+    events = session_data.get("events", [])[-n:]
+    lines = []
+    for evt in events:
+        kind = evt.get("type", "unknown")
+        summary = evt.get("summary", "")
+        content_preview = (evt.get("content", "") or "")[:200]
+        if summary:
+            lines.append(f"[{kind}] {summary}")
+        elif content_preview:
+            lines.append(f"[{kind}] {content_preview}")
+        else:
+            lines.append(f"[{kind}]")
+    return "\n".join(lines) if lines else "The AI coder is working on a project."
+
+
+@app.get("/api/viewer-chat/{session_id:path}")
+async def viewer_chat(session_id: str):
+    """Return a generated viewer chat message for the session."""
+    import random
+
+    async with _chat_lock:
+        buf = _chat_buffers.get(session_id, [])
+
+        if not buf:
+            # Try to generate a batch from LLM
+            try:
+                real_path = _path_map.get(session_id, session_id)
+                file_path = Path(real_path)
+                if not file_path.exists():
+                    summaries = scan_sessions(DATA_DIR)
+                    for s in summaries:
+                        if s.id == session_id or s.file_path == session_id:
+                            file_path = Path(s.file_path)
+                            break
+
+                if file_path.exists():
+                    session = parse(file_path)
+                    context = _build_context(_redact_session(session.to_dict()))
+                    messages = await llm.generate_viewer_messages(context, count=5)
+                    if messages:
+                        buf = [
+                            {
+                                "name": random.choice(VIEWER_NAMES),
+                                "message": msg,
+                            }
+                            for msg in messages
+                        ]
+                        _chat_buffers[session_id] = buf
+            except Exception:
+                pass
+
+        if buf:
+            item = buf.pop(0)
+            _chat_buffers[session_id] = buf
+            return item
+
+    # Fallback — empty means client should use hardcoded messages
+    return {"name": "", "message": ""}
 
 
 @app.websocket("/ws/session/{session_id:path}")
@@ -334,6 +409,11 @@ def main(args: list[str] | None = None) -> None:
     host = "127.0.0.1"
     no_browser = False
     demo = False
+    llm_provider = None
+    ollama_url = None
+    ollama_model = None
+    openai_key = None
+    openai_model = None
 
     i = 0
     while i < len(args):
@@ -352,18 +432,46 @@ def main(args: list[str] | None = None) -> None:
         elif args[i] == "--demo":
             demo = True
             i += 1
+        elif args[i] == "--llm" and i + 1 < len(args):
+            llm_provider = args[i + 1]
+            i += 2
+        elif args[i] == "--ollama-url" and i + 1 < len(args):
+            ollama_url = args[i + 1]
+            i += 2
+        elif args[i] == "--ollama-model" and i + 1 < len(args):
+            ollama_model = args[i + 1]
+            i += 2
+        elif args[i] == "--openai-key" and i + 1 < len(args):
+            openai_key = args[i + 1]
+            i += 2
+        elif args[i] == "--openai-model" and i + 1 < len(args):
+            openai_model = args[i + 1]
+            i += 2
         elif args[i] in ("-h", "--help"):
             print("Usage: agent-replay [OPTIONS]")
             print("\nLaunch the agent-replay web dashboard.")
             print("\nOptions:")
-            print(f"  --port PORT      Port to listen on (default: {port})")
-            print(f"  --host HOST      Host to bind to (default: {host})")
-            print("  --no-browser     Don't auto-open browser")
-            print("  --public         Redact secrets, API keys, and full paths")
-            print("  --demo           Use bundled example data (no live sessions needed)")
+            print(f"  --port PORT        Port to listen on (default: {port})")
+            print(f"  --host HOST        Host to bind to (default: {host})")
+            print("  --no-browser       Don't auto-open browser")
+            print("  --public           Redact secrets, API keys, and full paths")
+            print("  --demo             Use bundled example data (no live sessions needed)")
+            print("  --llm PROVIDER     LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
+            print("  --ollama-url URL   Ollama server URL (default: http://localhost:11434)")
+            print("  --ollama-model M   Ollama model name (default: mistral-small3.2)")
+            print("  --openai-key KEY   OpenAI API key (env: AGENTSTV_OPENAI_KEY)")
+            print("  --openai-model M   OpenAI model name (default: gpt-4o-mini)")
             sys.exit(0)
         else:
             i += 1
+
+    llm.configure(
+        provider=llm_provider,
+        ollama_url=ollama_url,
+        ollama_model=ollama_model,
+        openai_key=openai_key,
+        openai_model=openai_model,
+    )
 
     if demo:
         global DATA_DIR

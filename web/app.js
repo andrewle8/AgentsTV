@@ -1645,6 +1645,8 @@ const VIEWER_MESSAGES = [
 
 function startViewerChat() {
     stopViewerChat();
+    // Pre-fetch LLM messages so they're ready when needed
+    fetchViewerChatBatch();
     function scheduleNext() {
         const delay = 4000 + Math.random() * 12000; // 4-16s between messages
         state.viewerChatTimer = setTimeout(() => {
@@ -1662,6 +1664,31 @@ function stopViewerChat() {
     }
 }
 
+// Queue of LLM-generated viewer chat messages
+const viewerChatQueue = [];
+let viewerChatFetching = false;
+
+async function fetchViewerChatBatch() {
+    if (viewerChatFetching || !state.sessionFilePath) return;
+    viewerChatFetching = true;
+    try {
+        // Fetch 5 messages one at a time from the batch endpoint
+        for (let i = 0; i < 5; i++) {
+            const resp = await fetch('/api/viewer-chat/' + encodeURIComponent(state.sessionFilePath));
+            if (!resp.ok) break;
+            const data = await resp.json();
+            if (data.name && data.message) {
+                viewerChatQueue.push(data);
+            } else {
+                break; // empty response = no LLM available
+            }
+        }
+    } catch (e) {
+        // LLM unavailable, will fall back to hardcoded
+    }
+    viewerChatFetching = false;
+}
+
 function addViewerChatMessage() {
     const log = document.getElementById('event-log');
     if (!log) return;
@@ -1672,8 +1699,23 @@ function addViewerChatMessage() {
         return;
     }
 
-    const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
-    const msg = VIEWER_MESSAGES[Math.floor(Math.random() * VIEWER_MESSAGES.length)];
+    let name, msg;
+
+    // Try LLM queue first
+    if (viewerChatQueue.length > 0) {
+        const item = viewerChatQueue.shift();
+        name = item.name;
+        msg = item.message;
+        // Refill when running low
+        if (viewerChatQueue.length <= 1) fetchViewerChatBatch();
+    } else {
+        // Fallback to hardcoded
+        name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
+        msg = VIEWER_MESSAGES[Math.floor(Math.random() * VIEWER_MESSAGES.length)];
+        // Try to fill queue for next time
+        if (!viewerChatFetching) fetchViewerChatBatch();
+    }
+
     const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
     const color = colors[Math.floor(Math.random() * colors.length)];
 
