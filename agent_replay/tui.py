@@ -68,14 +68,16 @@ class ReplayTUI:
         self.current_idx = 0
         self.playing = True
         self.speed = 1  # 1-4 multiplier
-        self.log_lines: list[Text] = []
+        self.log_lines: list[tuple[EventType, Text]] = []  # (event_type, rendered_line)
         self.max_log_lines = 50
         self.files_touched: dict[str, str] = {}  # path -> R/W/C tag
         self.agent_tokens: dict[str, tuple[int, int]] = {}  # agent_id -> (in, out)
+        self.agent_cache_tokens: dict[str, int] = {}  # agent_id -> cache_read
         self.agent_status: dict[str, str] = {}  # agent_id -> status key
         self.floating_tokens: list[tuple[int, int, str]] = []  # (appear_idx, tokens, agent_color)
         self.live_file = live_file
         self._last_reload = 0.0
+        self.filter_noise = False  # Toggle to hide tool_results and dim text
 
     def run(self) -> None:
         """Main loop — render with Rich Live, handle keyboard input."""
@@ -161,6 +163,8 @@ class ReplayTUI:
                         self._advance()
                     elif k == "left":
                         self._step_back()
+                    elif k == "f":
+                        self.filter_noise = not self.filter_noise
 
                 now = time.time()
                 interval = 0.3 / self.speed
@@ -209,6 +213,7 @@ class ReplayTUI:
         self.log_lines.clear()
         self.files_touched.clear()
         self.agent_tokens.clear()
+        self.agent_cache_tokens.clear()
         self.agent_status.clear()
         self.floating_tokens.clear()
         self.current_idx = 0
@@ -245,6 +250,9 @@ class ReplayTUI:
                 prev[1] + event.output_tokens,
             )
             self.floating_tokens.append((self.current_idx, total_tok, agent_color))
+        if event.cache_read_tokens > 0:
+            prev_cache = self.agent_cache_tokens.get(event.agent_id, 0)
+            self.agent_cache_tokens[event.agent_id] = prev_cache + event.cache_read_tokens
 
         # Trim old floating tokens (keep last 3)
         if len(self.floating_tokens) > 3:
@@ -303,7 +311,7 @@ class ReplayTUI:
         if total_tok > 0:
             line.append(f"  +{_fmt_tokens(total_tok)} tok", style="bold yellow")
 
-        self.log_lines.append(line)
+        self.log_lines.append((event.type, line))
         if len(self.log_lines) > self.max_log_lines:
             self.log_lines = self.log_lines[-self.max_log_lines :]
 
@@ -344,7 +352,7 @@ class ReplayTUI:
         return layout
 
     def _render_header(self) -> Panel:
-        """Render session info header."""
+        """Render session info header with token counts and cost."""
         s = self.session
         text = Text()
         text.append(" agent-replay ", style="bold white on bright_black")
@@ -357,19 +365,52 @@ class ReplayTUI:
             text.append("  ", style="white")
         if s.branch:
             text.append(f"⎇ {s.branch}", style="dim cyan")
+            text.append("  ", style="white")
+
+        # Token totals and cost
+        total_in = sum(t[0] for t in self.agent_tokens.values())
+        total_out = sum(t[1] for t in self.agent_tokens.values())
+        total_cache = sum(
+            self.agent_cache_tokens.get(aid, 0)
+            for aid in self.agent_tokens
+        )
+        total_all = total_in + total_out
+
+        if total_all > 0:
+            text.append(f"tokens: ", style="dim")
+            text.append(f"{_fmt_tokens(total_in)}", style="yellow")
+            text.append(f" in  ", style="dim")
+            text.append(f"{_fmt_tokens(total_out)}", style="bold yellow")
+            text.append(f" out", style="dim")
+            if total_cache > 0:
+                text.append(f"  {_fmt_tokens(total_cache)}", style="dim cyan")
+                text.append(f" cached", style="dim")
+            # Estimated cost (Sonnet pricing as reasonable default)
+            # $3/MTok in, $15/MTok out, $0.30/MTok cache read
+            cost = (total_in * 3.0 + total_out * 15.0 + total_cache * 0.30) / 1_000_000
+            text.append(f"  ~$", style="dim")
+            text.append(f"{cost:.3f}" if cost < 1 else f"{cost:.2f}", style="bold bright_green")
+
         return Panel(text, border_style="bright_black")
+
+    # Event types hidden when filter is on
+    NOISE_TYPES = {EventType.TOOL_RESULT, EventType.TEXT}
 
     def _render_log(self) -> Panel:
         """Render the scrolling event log panel."""
         text = Text()
-        for i, line in enumerate(self.log_lines):
+        visible = self.log_lines
+        if self.filter_noise:
+            visible = [(t, l) for t, l in visible if t not in self.NOISE_TYPES]
+        for i, (_, line) in enumerate(visible):
             text.append_text(line)
-            if i < len(self.log_lines) - 1:
+            if i < len(visible) - 1:
                 text.append("\n")
 
+        filter_label = "  [dim][f]ilter: ON[/dim]" if self.filter_noise else ""
         return Panel(
             text,
-            title="[bold bright_white] EVENT LOG [/bold bright_white]",
+            title=f"[bold bright_white] EVENT LOG [/bold bright_white]{filter_label}",
             border_style="bright_black",
             subtitle=f"[dim]{len(self.session.events)} events[/dim]",
         )
@@ -525,6 +566,43 @@ def _find_latest_transcript() -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def _list_sessions() -> None:
+    """List recent sessions interactively."""
+    import json
+    from datetime import datetime
+
+    claude_dir = Path.home() / ".claude" / "projects"
+    if not claude_dir.is_dir():
+        print("No transcripts found in ~/.claude/projects/")
+        return
+
+    candidates = list(claude_dir.rglob("*.jsonl"))
+    candidates = [c for c in candidates if "subagents" not in str(c)]
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = candidates[:20]
+
+    console = Console()
+    table = Table(title="Recent Sessions", show_lines=False)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Date", style="cyan", width=18)
+    table.add_column("Project", style="bold", width=20)
+    table.add_column("Lines", justify="right", width=6)
+    table.add_column("Path", style="dim")
+
+    for i, path in enumerate(candidates):
+        # Quick metadata extraction
+        mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        line_count = sum(1 for _ in open(path, encoding="utf-8", errors="ignore"))
+        # Project from parent directory name
+        project = path.parent.name
+        if project == "projects":
+            project = path.stem[:12]
+        table.add_row(str(i + 1), mtime, project, str(line_count), str(path))
+
+    console.print(table)
+    console.print("\n[dim]Run: agent-replay <path>[/dim]")
+
+
 def main(args: list[str] | None = None) -> None:
     """CLI entry point."""
     if args is None:
@@ -538,16 +616,20 @@ def main(args: list[str] | None = None) -> None:
     if "--latest" in args:
         args.remove("--latest")
 
+    if "--list" in args or "-l" in args:
+        _list_sessions()
+        sys.exit(0)
+
     if args and args[0] in ("-h", "--help"):
         print("Usage: agent-replay [transcript.jsonl]")
         print("\nReplay Claude Code sessions as animated TUI scenes.")
         print("With no arguments, replays the most recent session in live mode.")
         print("\nOptions:")
+        print("  --list     List recent sessions")
         print("  --no-live  Disable live reload (replay only, don't watch for new events)")
         print("\nControls:")
-        print("  SPACE    play/pause")
-        print("  1-4      speed multiplier")
-        print("  ←/→      step back/forward")
+        print("  SPACE    play/pause     f     toggle filter")
+        print("  1-4      speed          ←/→   step back/forward")
         print("  q        quit")
         sys.exit(0)
 
