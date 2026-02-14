@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir .
 
 EXPOSE 8420
 
-CMD ["agent-replay", "--host", "0.0.0.0", "--port", "8420", "--no-browser", "--public"]
+CMD ["python", "-m", "agent_replay", "--host", "0.0.0.0", "--port", "8420", "--no-browser", "--public"]
