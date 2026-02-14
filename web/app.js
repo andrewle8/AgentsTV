@@ -2017,48 +2017,69 @@ const VIEWER_NAMES = [
 // Event-type-specific fallback messages for viewer chat
 const VIEWER_MESSAGES_BY_TYPE = {
     file_update: [
-        'that edit is clean', 'refactor city 🏗️', 'ship it!', 'LGTM',
-        'the diff is *chefs kiss*', 'how many lines was that', 'modular king',
-        'love the naming', 'that function tho', 'needs more comments',
+        'that edit is clean', 'ship it!', 'LGTM',
+        'how many lines was that', 'love the naming', 'that function tho',
         'the abstraction is solid', 'clean commit incoming',
+        'should probably add a docstring there', 'watch the cyclomatic complexity',
+        'extract that into a helper?', 'nice separation of concerns',
+        'the type hints are chefs kiss', 'that return early pattern tho',
+        'DRY violation or intentional?', 'single responsibility W',
     ],
     file_create: [
         'new file just dropped', 'fresh module 🔥', 'the architecture is growing',
-        'another one', 'building out the project structure', 'nice scaffolding',
+        'building out the project structure', 'nice scaffolding',
+        'should that be a separate package?', 'good call on the file split',
+        'init file or barrel export?', 'add it to .gitignore?',
     ],
     bash: [
-        'terminal wizard', 'that command tho 🧙', 'pipe gang', 'sudo moment',
+        'terminal wizard', 'that command tho 🧙', 'pipe gang',
         'one-liner king', 'just grep it', 'shell scripting arc',
-        'the flags on that command', 'thats a lot of output', 'npm install moment',
+        'the flags on that command', 'thats a lot of output',
+        'redirect stderr too', 'add set -e at the top',
+        'use xargs instead of the loop', 'that pipe chain is elegant',
+        'curl | jq gang', 'should probably quote those vars',
     ],
     error: [
-        'RIP 💀', 'F in chat', 'bugs are features', 'stack trace arc',
+        'RIP 💀', 'F in chat', 'stack trace arc',
         'not the red text 😭', 'error handling time', 'classic off by one',
-        'have you tried turning it off and on again', 'the debugger is calling',
+        'the debugger is calling', 'check the stack trace closely',
+        'is that a race condition?', 'null reference strikes again',
+        'missing import maybe?', 'wrong argument order probably',
+        'did the types change upstream?', 'try adding a breakpoint there',
     ],
     think: [
         'the thinking phase 🧠', 'planning arc', 'galaxy brain moment',
         'cooking something up', 'big brain time', 'strategizing',
+        'architecture review in progress', 'weighing the tradeoffs',
+        'considering the edge cases', 'this is the important part',
     ],
     tool_call: [
         'tool usage on point', 'using the right tool for the job',
         'that tool call was fast', 'automation ftw',
+        'good call reaching for grep first', 'should cache that result',
+        'batch those calls maybe?', 'nice API choice',
     ],
     complete: [
-        'GG 🎉', 'LETS GOOO', 'task complete W', 'ez clap',
-        'another one done', 'built different', 'speedrun strats',
+        'GG 🎉', 'LETS GOOO', 'task complete W',
+        'another one done', 'speedrun strats',
+        'tests passing?', 'time for code review', 'push it!',
+        'merge and ship', 'clean implementation',
     ],
     spawn: [
         'new agent just dropped', 'subagent arc', 'parallel processing moment',
         'deploying reinforcements', 'the squad is growing',
+        'divide and conquer approach', 'smart to parallelize that',
     ],
 };
 
 const VIEWER_MESSAGES_GENERIC = [
-    'LFG 🔥', 'this is clean', 'sheeeesh', 'nice', 'W', 'Pog', 'lets goooo',
-    'so good', '👀', '💯', 'ez clap', 'built different',
+    'LFG 🔥', 'this is clean', 'nice', 'W', 'Pog',
     'what lang is this?', 'whats the tech stack?', 'can you explain that?',
-    '🚀🚀🚀', '☕', '⌨️💨', '🧠', '✨',
+    'should write a test for that', 'add error handling there',
+    'whats the time complexity on that?', 'consider the edge cases',
+    'is there a linter running?', 'the naming convention is consistent',
+    'wonder what the memory footprint looks like', 'version control is key',
+    'any benchmarks on this?', 'solid project structure',
 ];
 
 function startViewerChat() {
@@ -2153,8 +2174,8 @@ async function fetchViewerChatBatch() {
     if (viewerChatFetching || !state.sessionFilePath) return;
     viewerChatFetching = true;
     try {
-        // Fetch 5 messages one at a time from the batch endpoint
-        for (let i = 0; i < 5; i++) {
+        // Fetch 10 messages to build a buffer ahead of consumption
+        for (let i = 0; i < 10; i++) {
             const resp = await fetch('/api/viewer-chat/' + encodeURIComponent(state.sessionFilePath));
             if (!resp.ok) break;
             const data = await resp.json();
@@ -2189,8 +2210,8 @@ function addViewerChatMessage() {
         const item = viewerChatQueue.shift();
         name = item.name;
         msg = item.message;
-        // Refill when running low
-        if (viewerChatQueue.length <= 1) fetchViewerChatBatch();
+        // Refill when running low (start early so LLM has time)
+        if (viewerChatQueue.length <= 3) fetchViewerChatBatch();
     } else {
         // Fallback — pick from event-specific pool when possible
         name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];

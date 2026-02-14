@@ -297,7 +297,7 @@ async def viewer_chat(session_id: str):
                     session = parse(file_path)
                     context = _build_context(_redact_session(session.to_dict()))
                     messages, llm_error = await llm.generate_viewer_messages(
-                        context, count=5
+                        context, count=10
                     )
                     if messages:
                         buf = [
