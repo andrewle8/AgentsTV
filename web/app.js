@@ -404,9 +404,10 @@ function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scro
         drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
     } else {
         const mc = monitorContent || (isLarge ? state.monitorContent : null);
-        if (mc) {
-            const mcType = monitorContent ? monitorContent._type : state.monitorContentType;
-            drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, mc._text || mc, mcType);
+        const mcText = mc ? (mc._text || mc) : null;
+        const mcType = mc ? (monitorContent ? monitorContent._type : state.monitorContentType) : null;
+        if (mcText && typeof mcText === 'string' && mcText.length > 10) {
+            drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, mcText, mcType);
         } else {
             drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
         }
