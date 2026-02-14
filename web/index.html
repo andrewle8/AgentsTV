@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>agent-replay</title>
+    <title>AgentTV</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -11,53 +11,104 @@
         <!-- Dashboard View -->
         <div id="dashboard-view" class="view">
             <header class="top-bar">
-                <span class="logo">agent-replay</span>
-                <span class="subtitle">session dashboard</span>
+                <span class="logo"><span class="logo-icon">▶</span> AgentTV</span>
+                <nav class="top-nav">
+                    <span class="nav-item active">Browse</span>
+                    <span class="nav-item">Following</span>
+                </nav>
+                <span class="top-spacer"></span>
                 <span id="dash-status" class="conn-status"></span>
             </header>
+            <div class="browse-header">
+                <h2>Live Channels <span id="channel-count" class="dim"></span></h2>
+            </div>
             <div id="session-grid" class="session-grid"></div>
             <div id="no-sessions" class="empty-state" style="display:none">
-                No sessions found in ~/.claude/projects/
+                No streams found — waiting for agents in ~/.claude/projects/
             </div>
         </div>
 
-        <!-- Session Detail View -->
+        <!-- Session Detail View (Stream) -->
         <div id="session-view" class="view" style="display:none">
             <header class="top-bar">
-                <button id="back-btn" class="back-btn" title="Back to dashboard">◂ back</button>
-                <span id="session-slug" class="logo"></span>
-                <span id="session-meta" class="subtitle"></span>
-                <span id="session-tokens" class="token-info"></span>
+                <button id="back-btn" class="back-btn" title="Back to browse">◂ Browse</button>
+                <span class="logo"><span class="logo-icon">▶</span> AgentTV</span>
+                <span class="top-spacer"></span>
                 <span id="session-status" class="conn-status"></span>
             </header>
-            <div class="session-layout">
-                <div class="event-log-container">
-                    <div class="panel-header">
-                        EVENT LOG
+            <div class="stream-layout">
+                <!-- Main content area -->
+                <div class="stream-main">
+                    <!-- Video / Webcam area -->
+                    <div class="video-container">
+                        <canvas id="webcam-canvas" width="640" height="360"></canvas>
+                        <div class="video-overlay-top">
+                            <span id="live-badge" class="live-badge">LIVE</span>
+                            <span id="viewer-count" class="viewer-count">👁 0</span>
+                        </div>
+                    </div>
+                    <!-- Stream info bar -->
+                    <div class="stream-info">
+                        <div class="streamer-row">
+                            <div class="streamer-avatar" id="streamer-avatar">🤖</div>
+                            <div class="streamer-details">
+                                <div class="streamer-name" id="session-slug"></div>
+                                <div class="stream-title" id="session-meta"></div>
+                            </div>
+                            <div class="stream-actions">
+                                <button id="like-btn" class="action-btn like-btn">
+                                    <span class="heart">♥</span> <span id="like-count">0</span>
+                                </button>
+                                <button id="tip-btn" class="action-btn tip-btn">
+                                    💎 Tip
+                                </button>
+                                <button id="follow-btn" class="action-btn follow-btn">+ Follow</button>
+                            </div>
+                        </div>
+                        <!-- Donation goal -->
+                        <div class="donation-goal">
+                            <div class="goal-header">
+                                <span>🎯 Token Goal</span>
+                                <span id="goal-text" class="goal-text"></span>
+                            </div>
+                            <div class="goal-bar-bg">
+                                <div id="goal-bar" class="goal-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat sidebar -->
+                <div class="chat-sidebar">
+                    <div class="chat-header">
+                        <span>STREAM CHAT</span>
                         <span id="event-count" class="dim"></span>
                         <span id="new-events-badge" class="new-badge" style="display:none"></span>
                     </div>
-                    <div id="event-log" class="event-log"></div>
-                </div>
-                <div class="sidebar">
-                    <div class="sidebar-panel">
-                        <div class="panel-header">AGENTS</div>
-                        <div id="agents-panel"></div>
+                    <div id="event-log" class="chat-log"></div>
+                    <div class="chat-actions">
+                        <div class="chat-filters">
+                            <button id="filter-toggle-btn" class="filter-toggle-btn">⚙ Filters</button>
+                            <div id="filters-panel" class="filters-dropdown" style="display:none"></div>
+                        </div>
                     </div>
-                    <div class="sidebar-panel">
-                        <div class="panel-header">INVENTORY</div>
-                        <div id="inventory-panel"></div>
-                    </div>
-                    <div class="sidebar-panel">
-                        <div class="panel-header">FILTERS</div>
-                        <div id="filters-panel"></div>
+                    <!-- Mods & Viewers panels -->
+                    <div class="chat-panels">
+                        <div class="chat-panel-section">
+                            <div class="chat-panel-header" data-toggle="mods-panel">
+                                🗡 MODS <span id="mod-count" class="dim"></span>
+                            </div>
+                            <div id="agents-panel" class="chat-panel-body"></div>
+                        </div>
+                        <div class="chat-panel-section">
+                            <div class="chat-panel-header" data-toggle="viewers-panel">
+                                👁 VIEWERS <span id="viewer-list-count" class="dim"></span>
+                            </div>
+                            <div id="inventory-panel" class="chat-panel-body"></div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <footer class="status-bar">
-                <span id="live-indicator"></span>
-                <span id="status-text"></span>
-            </footer>
         </div>
     </div>
     <script src="/static/app.js"></script>
