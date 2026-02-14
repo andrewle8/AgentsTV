@@ -425,7 +425,7 @@ def main(args: list[str] | None = None) -> None:
     global PUBLIC_MODE
 
     port = 8420
-    host = "127.0.0.1"
+    host = "0.0.0.0"
     no_browser = False
     demo = False
     llm_provider = None
