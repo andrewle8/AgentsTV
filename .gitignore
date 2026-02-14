@@ -6,5 +6,3 @@ build/
 .venv/
 *.egg
 .mypy_cache/
-examples/*.jsonl
-examples/*/

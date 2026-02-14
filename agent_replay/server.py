@@ -333,6 +333,7 @@ def main(args: list[str] | None = None) -> None:
     port = 8420
     host = "127.0.0.1"
     no_browser = False
+    demo = False
 
     i = 0
     while i < len(args):
@@ -348,6 +349,9 @@ def main(args: list[str] | None = None) -> None:
         elif args[i] == "--public":
             PUBLIC_MODE = True
             i += 1
+        elif args[i] == "--demo":
+            demo = True
+            i += 1
         elif args[i] in ("-h", "--help"):
             print("Usage: agent-replay [OPTIONS]")
             print("\nLaunch the agent-replay web dashboard.")
@@ -356,9 +360,15 @@ def main(args: list[str] | None = None) -> None:
             print(f"  --host HOST      Host to bind to (default: {host})")
             print("  --no-browser     Don't auto-open browser")
             print("  --public         Redact secrets, API keys, and full paths")
+            print("  --demo           Use bundled example data (no live sessions needed)")
             sys.exit(0)
         else:
             i += 1
+
+    if demo:
+        global DATA_DIR
+        DATA_DIR = Path(__file__).parent.parent / "examples"
+        PUBLIC_MODE = True
 
     url = f"http://{host}:{port}"
     mode = " (PUBLIC MODE — secrets redacted)" if PUBLIC_MODE else ""

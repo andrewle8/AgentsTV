@@ -1801,9 +1801,8 @@ function appendChatMessage(log, evt, s, isMaster) {
     const nameClass = `name-${agentColor}`;
     const chatText = buildChatText(evt);
     const tokenHtml = totalTok > 0 ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>` : '';
-    const projectTag = (isMaster && evt.project) ? `<span class="project-tag">${esc(evt.project)}</span>` : '';
 
-    div.innerHTML = `${projectTag}<span class="chat-badge">${badge}</span>`
+    div.innerHTML = `<span class="chat-badge">${badge}</span>`
         + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
         + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
         + `<span class="chat-text">${esc(chatText)}</span>`
