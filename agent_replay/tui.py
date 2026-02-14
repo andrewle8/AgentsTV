@@ -144,12 +144,12 @@ class ReplayTUI:
         key_thread = threading.Thread(target=_read_keys, daemon=True)
         key_thread.start()
 
-        total = len(self.session.events)
-
         with Live(self._build_layout(), console=self.console, refresh_per_second=15, screen=True) as live:
             last_advance = time.time()
 
             while True:
+                total = len(self.session.events)
+
                 while key_queue:
                     k = key_queue.pop(0)
                     if k == "q":
@@ -173,7 +173,8 @@ class ReplayTUI:
                         self._advance()
                         last_advance = now
                     else:
-                        self.playing = False
+                        if not self.live_file:
+                            self.playing = False
 
                 # Live mode: periodically re-parse for new events
                 if self.live_file and (now - self._last_reload) > 2.0:
