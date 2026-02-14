@@ -9,7 +9,7 @@ from pathlib import Path
 from .models import Agent, Event, EventType, Session
 
 # Agent colors assigned round-robin to sub-agents
-AGENT_COLORS = ["cyan", "magenta", "yellow", "green", "red", "blue"]
+AGENT_COLORS = ["magenta", "yellow", "green", "red", "blue", "white"]
 
 # Map tool names to event types
 TOOL_TYPE_MAP = {
@@ -65,7 +65,7 @@ def parse_claude_code(file_path: str | Path) -> Session:
     """Parse a Claude Code JSONL transcript into a Session."""
     file_path = Path(file_path)
     session = Session(id="unknown")
-    main_agent = Agent(id="main", name="Main", color="white")
+    main_agent = Agent(id="main", name="Main", color="cyan")
     session.agents["main"] = main_agent
     color_idx = 0
 
