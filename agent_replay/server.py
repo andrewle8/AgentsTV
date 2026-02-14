@@ -534,7 +534,6 @@ def main(args: list[str] | None = None) -> None:
     port = 8420
     host = "0.0.0.0"
     no_browser = False
-    demo = False
     llm_provider = None
     ollama_url = None
     ollama_model = None
@@ -554,9 +553,6 @@ def main(args: list[str] | None = None) -> None:
             i += 1
         elif args[i] == "--public":
             PUBLIC_MODE = True
-            i += 1
-        elif args[i] == "--demo":
-            demo = True
             i += 1
         elif args[i] == "--llm" and i + 1 < len(args):
             llm_provider = args[i + 1]
@@ -581,7 +577,6 @@ def main(args: list[str] | None = None) -> None:
             print(f"  --host HOST        Host to bind to (default: {host})")
             print("  --no-browser       Don't auto-open browser")
             print("  --public           Redact secrets, API keys, and full paths")
-            print("  --demo             Use bundled example data (no live sessions needed)")
             print("  --llm PROVIDER     LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
             print("  --ollama-url URL   Ollama server URL (default: http://localhost:11434)")
             print("  --ollama-model M   Ollama model name (default: mistral-small3.2)")
@@ -598,11 +593,6 @@ def main(args: list[str] | None = None) -> None:
         openai_key=openai_key,
         openai_model=openai_model,
     )
-
-    if demo:
-        global DATA_DIR
-        DATA_DIR = Path(__file__).parent.parent / "examples"
-        PUBLIC_MODE = True
 
     # Check if port is already in use before starting
     import socket

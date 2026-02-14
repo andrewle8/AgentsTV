@@ -1,3 +1,3 @@
 """agent-replay: Web-based agent session visualizer for Claude Code."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

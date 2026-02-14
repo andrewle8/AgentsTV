@@ -7,7 +7,7 @@ Twitch-style live visualizer for Claude Code sessions. Watch AI code monkeys wor
 ## Install
 
 ```bash
-pip install -e .
+pip install agent-replay
 ```
 
 Requires Python 3.10+ and a `~/.claude/projects/` directory with Claude Code session logs.
@@ -15,46 +15,96 @@ Requires Python 3.10+ and a `~/.claude/projects/` directory with Claude Code ses
 ## Usage
 
 ```bash
-# Launch the web dashboard (opens browser)
+# Launch the web dashboard (opens browser automatically)
 agent-replay
 
 # Options
 agent-replay --port 8420          # Custom port (default: 8420)
-agent-replay --host 0.0.0.0      # Bind to all interfaces
+agent-replay --host 0.0.0.0      # Bind to all interfaces (default, enables LAN access)
 agent-replay --no-browser         # Don't auto-open browser
 agent-replay --public             # Redact secrets for public sharing
 ```
 
+The dashboard auto-discovers Claude Code session logs from `~/.claude/projects/`. Override with `AGENTSTV_DATA_DIR=/path/to/logs`.
+
 ## Features
 
-**Dashboard** — Browse all Claude Code sessions as channel cards with live pixel art thumbnails showing actual code from each session. Cards show project name, branch, agent count, event count, and live/offline status. Master Control Room view aggregates all active sessions.
+### Dashboard
 
-**Pixel Art Webcam** — Each session gets a unique procedurally generated scene:
-- Character with idle animations (sipping drinks, stretching, looking around, scratching head, leaning forward)
-- Eye blinking and breathing animation
-- Dynamic monitor content cycling between code, terminal, file tree, and debug log views
-- Monitors show actual code from agent events
-- Monitor glow and ambient lighting effects
+Browse all Claude Code sessions as Twitch-style channel cards. Each card shows a live pixel art thumbnail with actual code from the session, project name, branch, agent count, event count, and live/offline status. A Master Control Room view aggregates all active sessions into a single multi-monitor scene.
+
+### Pixel Art Webcam
+
+Each session gets a unique procedurally generated coding scene with:
+- A character with idle animations (sipping drinks, stretching, looking around, scratching head, leaning forward)
+- Dynamic monitor content cycling between code, terminal, file tree, and debug views
+- Monitors display actual code snippets from agent events
+- Desk decorations: coffee with steam, cats that stretch, plants that sway, lamps with moths, rubber ducks
+- Window scenes with rain, shooting stars, clouds, city skylines
 - Keyboard keys light up during typing, flash red on errors, rainbow on completion
-- Desk decorations: coffee with steam particles, cats that stretch, plants that sway, lamps with orbiting moths, rubber ducks that bob and talk
-- Window scenes with rain, shooting stars, drifting clouds, city skylines
-- Ambient dust motes and monitor light particles
 
-**Reactions** — The character reacts to agent events in real-time:
-- Error: desk shakes, red ! above head, skull on monitor, BSOD flash
-- Complete: fist pump, gold sparkles, confetti, checkmark on monitor
-- Spawn: purple rings radiate outward
-- Think: thought bubble dots, hand on chin
-- User: wave at camera, ? speech bubble
-- Bash: lightning bolt above keyboard
+The character reacts to agent events in real-time:
+- **Error** — desk shakes, red ! above head, skull on monitor, BSOD flash
+- **Complete** — fist pump, gold sparkles, confetti, checkmark on monitor
+- **Spawn** — purple rings radiate outward
+- **Think** — thought bubble dots, hand on chin
+- **User** — wave at camera, speech bubble
+- **Bash** — lightning bolt above keyboard
 
-**Chat** — Event log styled as Twitch chat with badges, colored agent names, expandable content, token counts. Viewers randomly chat and tip. Streamer reacts to tips. Scroll-to-bottom button when scrolled up.
+### Chat Sidebar
 
-**Master Control Room** — Wall of 6 monitors each showing different content modes, status LEDs, ceiling alert light on errors, manager character scanning monitors, coffee mug with steam, phone pickup animation.
+The event log is styled as a Twitch chat. Every agent action (file edits, bash commands, tool calls, etc.) appears as a chat message with type-specific badges and colored names. Click any message to expand and see the full content. Click "Ask about this" to ask the LLM about a specific event.
 
-**Public Streaming** — Run with `--public` to share your coding sessions. Server-side redaction scrubs API keys, tokens, passwords, JWTs, full file paths, and long base64 strings before data leaves the machine.
+### LLM Integration
 
-## Public Streaming Setup
+AgentsTV optionally uses a local or cloud LLM to generate dynamic content. All LLM features can be toggled on/off with the brain icon in the top bar. When LLM is off, viewer chat falls back to hardcoded messages and the narrator stops.
+
+#### Viewer Chat
+
+Simulated Twitch viewers react to what the agent is doing. Messages are generated by the LLM in batches and appear every 4-16 seconds. Random viewer tips appear ~15% of the time with token donation animations. When LLM is off, hardcoded chat messages still appear to keep the stream lively.
+
+#### Interactive Chat
+
+Type a question in the chat input bar to ask about what the agent is doing. The LLM responds with 1-2 sentences focused on the actual code, file, or command. You can also click "Ask about this" on any expanded event to ask about that specific action.
+
+#### Narrator Bot
+
+A play-by-play commentator (`caster_bot`) provides esports-style narration every 15-40 seconds. Appears with a gold border and microphone badge. Only active when LLM is enabled (no hardcoded fallback).
+
+#### Stream Title
+
+Auto-generated from recent agent activity. Scans the last 5 events to detect the dominant activity type (Coding, Terminal, Planning, Research) and programming language (from file extensions), combined with the branch name. Updates live as new events arrive. Example: `Coding · Python · main`.
+
+#### LLM Configuration
+
+Configure via CLI flags or the settings gear icon:
+
+```bash
+# Ollama (default, local)
+agent-replay --llm ollama --ollama-model mistral-small3.2
+
+# OpenAI
+agent-replay --llm openai --openai-key sk-... --openai-model gpt-4o-mini
+
+# Disable LLM entirely
+agent-replay --llm off
+```
+
+Or set environment variables: `AGENTSTV_LLM`, `AGENTSTV_OLLAMA_URL`, `AGENTSTV_OLLAMA_MODEL`, `AGENTSTV_OPENAI_KEY`, `AGENTSTV_OPENAI_MODEL`.
+
+The settings panel (gear icon) also lets you switch providers, pick from locally available Ollama models, and enter OpenAI keys at runtime.
+
+### Master Control Room
+
+Aggregates all active sessions into a single view with a wall of 6 monitors, status LEDs, ceiling alert light on errors, a manager character scanning monitors, and a coffee mug with steam.
+
+### Public Streaming
+
+Run with `--public` to share your coding sessions. Server-side redaction scrubs sensitive data before it leaves the machine:
+
+**Redacted:** API keys, tokens, passwords, bearer tokens, JWTs, GitHub PATs, Slack tokens, AWS keys, long base64 strings (40+ chars), full file paths (reduced to filenames), session file paths (hashed to opaque IDs).
+
+**Visible:** Project names, branch names, agent names, event types and timing, code structure on monitors (with secrets scrubbed), token counts and costs.
 
 To expose on the web via Cloudflare + Nginx Proxy Manager:
 
@@ -62,37 +112,49 @@ To expose on the web via Cloudflare + Nginx Proxy Manager:
 2. Nginx Proxy Manager: add proxy host pointing to your server IP:8420, enable WebSocket support, request SSL cert
 3. Cloudflare DNS: A record to your IP (proxied), enable WebSockets in Network settings, SSL mode Full (strict)
 
-What `--public` redacts (server-side, data never leaves the machine unredacted):
-- API keys, tokens, passwords, bearer tokens, JWTs, GitHub PATs, Slack tokens, AWS keys
-- Long base64 strings (40+ chars)
-- Full file paths reduced to just filenames
-- Session file paths hashed to opaque IDs
+### Live Updates
 
-What still shows through:
-- Project names, branch names, agent names
-- Event types and timing
-- Code structure on monitors (with secrets scrubbed)
-- Token counts and costs
+WebSocket connections push new events in real-time. The dashboard refreshes session status every 10 seconds. Individual session views poll for changes every 2 seconds and append new events without rebuilding the entire log.
 
 ## Architecture
 
 ```
 agent_replay/
-  server.py    # FastAPI web server, WebSocket live updates, --public redaction
+  __init__.py  # Version string
+  server.py    # FastAPI server, WebSocket live updates, REST API, --public redaction
   parser.py    # JSONL parsing -> normalized event stream
   models.py    # Event, Agent, Session, SessionSummary dataclasses
   scanner.py   # Session discovery — scans ~/.claude/projects/
+  llm.py       # LLM provider abstraction (Ollama/OpenAI), viewer/narrator/interactive chat
 
 web/
   index.html   # Dashboard + session view layout
-  app.js       # Pixel art engine, chat rendering, WebSocket client
+  app.js       # Pixel art engine, chat rendering, WebSocket client, LLM UI
   style.css    # Twitch-inspired dark theme
 ```
+
+### API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/sessions` | List all discovered sessions |
+| `GET /api/session/{id}` | Full parsed session data |
+| `GET /api/master` | Merged events from all recent sessions |
+| `GET /api/settings` | Current LLM configuration |
+| `PUT /api/settings` | Update LLM configuration |
+| `GET /api/ollama-models` | List locally available Ollama models |
+| `POST /api/chat` | Interactive chat (ask about agent activity) |
+| `GET /api/viewer-chat/{id}` | Get a generated viewer chat message |
+| `GET /api/narrator/{id}` | Get a narrator commentary message |
+| `WS /ws/session/{id}` | Live event stream for a session |
+| `WS /ws/master` | Live event stream for all active sessions |
+| `WS /ws/dashboard` | Live session list updates |
 
 ## Dependencies
 
 - [FastAPI](https://fastapi.tiangolo.com/) >= 0.104
 - [Uvicorn](https://www.uvicorn.org/) >= 0.24
+- [httpx](https://www.python-httpx.org/) >= 0.25
 
 ## Supported Formats
 
