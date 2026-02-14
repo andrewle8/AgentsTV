@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import re
 import sys
 import webbrowser
@@ -17,6 +18,10 @@ from .parser import parse
 from .scanner import scan_sessions
 
 WEB_DIR = Path(__file__).parent.parent / "web"
+
+# Allow overriding the session log directory via env var
+_data_dir_env = os.environ.get("AGENTSTV_DATA_DIR")
+DATA_DIR: Path | None = Path(_data_dir_env) if _data_dir_env else None
 
 app = FastAPI(title="agent-replay")
 
@@ -107,7 +112,7 @@ async def index():
 
 @app.get("/api/sessions")
 async def list_sessions():
-    summaries = scan_sessions()
+    summaries = scan_sessions(DATA_DIR)
     return [_redact_summary(s.to_dict()) for s in summaries]
 
 
@@ -119,7 +124,7 @@ async def get_session(session_id: str):
     file_path = Path(real_path)
     if not file_path.exists():
         # Try finding by session ID in known locations
-        summaries = scan_sessions()
+        summaries = scan_sessions(DATA_DIR)
         for s in summaries:
             if s.id == session_id or s.file_path == session_id:
                 file_path = Path(s.file_path)
@@ -139,7 +144,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
     real_path = _path_map.get(session_id, session_id)
     file_path = Path(real_path)
     if not file_path.exists():
-        summaries = scan_sessions()
+        summaries = scan_sessions(DATA_DIR)
         for s in summaries:
             if s.id == session_id or s.file_path == session_id:
                 file_path = Path(s.file_path)
@@ -183,7 +188,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
 @app.get("/api/master")
 async def get_master():
     """Return merged events from all recent sessions for the master channel."""
-    summaries = scan_sessions()
+    summaries = scan_sessions(DATA_DIR)
     # Take the most recent session per project (top 20)
     seen_projects: set[str] = set()
     selected: list[dict] = []
@@ -239,7 +244,7 @@ async def ws_master(websocket: WebSocket):
 
     try:
         while True:
-            summaries = scan_sessions()
+            summaries = scan_sessions(DATA_DIR)
             active = [s for s in summaries if s.is_active]
             new_events = []
             all_agents = {}
@@ -295,7 +300,7 @@ async def ws_dashboard(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            summaries = scan_sessions()
+            summaries = scan_sessions(DATA_DIR)
             await websocket.send_json({
                 "type": "sessions",
                 "data": [_redact_summary(s.to_dict()) for s in summaries],
