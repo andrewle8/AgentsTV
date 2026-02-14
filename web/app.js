@@ -73,6 +73,8 @@ let state = {
     sessionFilePath: '',  // for localStorage key
     chatFullscreen: false,
     viewerChatTimer: null,
+    monitorContent: null,  // latest code/text to show on monitor
+    monitorContentType: null, // event type for styling
     // Master channel state
     masterEvents: [],
     masterAgents: {},
@@ -109,9 +111,14 @@ function persistFollow(filePath) {
 // WEBCAM REACTIONS
 // ============================================================
 
-function triggerReaction(type) {
+function triggerReaction(type, content) {
     // Queue a visual reaction on the webcam canvas
     state.reaction = { type, startFrame: -1, duration: getReactionDuration(type) };
+    // Update monitor content if we have text to show
+    if (content && typeof content === 'string' && content.length > 5) {
+        state.monitorContent = content;
+        state.monitorContentType = type;
+    }
     // Adjust typing speed based on event type
     if (type === 'bash' || type === 'tool_call' || type === 'file_update' || type === 'file_create') {
         state.typingSpeed = 3.0;
@@ -203,7 +210,7 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
 
     // Monitor(s) based on setup
     const typingMult = isLarge ? state.typingSpeed : 1.0;
-    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult);
+    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge);
 
     // Chair
     const charX = w * 0.42;
@@ -345,32 +352,28 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
     }
 }
 
-function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult) {
+function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge) {
     const scrollSpeed = 0.5 * typingMult;
 
     if (setup === 'dual') {
-        // Two monitors side by side
-        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress);
-        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress);
+        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
+        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress, false);
     } else if (setup === 'ultrawide') {
-        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress);
+        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
     } else if (setup === 'laptop') {
-        // Laptop — shorter, angled screen
         const lx = w * 0.32;
         const ly = deskY - px * 14;
         const lw = px * 24;
         const lh = px * 12;
-        // Laptop base on desk
         ctx.fillStyle = '#3a3a44';
         ctx.fillRect(lx - px, deskY - px * 2, lw + px * 2, px * 2);
-        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress);
+        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
     } else {
-        // Single monitor (default)
-        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress);
+        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
     }
 }
 
-function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress) {
+function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge) {
     // Bezel
     ctx.fillStyle = '#2c2c34';
     ctx.fillRect(monX - px, monY - px, monW + px * 2, monH + px * 2);
@@ -399,7 +402,11 @@ function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scro
     } else if (rxType === 'think') {
         drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
     } else {
-        drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
+        if (isLarge && state.monitorContent) {
+            drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed);
+        } else {
+            drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
+        }
     }
 
     // CRT flicker
@@ -981,6 +988,76 @@ function drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scroll
         case 1: drawTerminal(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed); break;
         case 2: drawFileTree(ctx, monX, monY, monW, monH, px, seed, frame); break;
         case 3: drawDebugLog(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed); break;
+    }
+}
+
+function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed) {
+    const content = state.monitorContent || '';
+    const lines = content.split('\n');
+    const maxCols = Math.floor((monW - px * 2) / (px * 0.7)); // tighter char spacing
+    const maxRows = Math.floor((monH - px * 2) / (px * 2));
+    const scrollOffset = Math.floor(frame * scrollSpeed * 0.3) % Math.max(1, lines.length);
+
+    // Color scheme based on content type
+    const evtType = state.monitorContentType;
+    const colorSchemes = {
+        bash:        { keyword: '#ffcc00', text: '#e0e0e0', comment: '#666666', string: '#00ff41' },
+        error:       { keyword: '#ff4444', text: '#ff8888', comment: '#884444', string: '#ffaaaa' },
+        think:       { keyword: '#88aaff', text: '#cccccc', comment: '#666688', string: '#aaccff' },
+        file_create: { keyword: '#00e676', text: '#c5c8c6', comment: '#5c6370', string: '#98c379' },
+        file_update: { keyword: '#00e676', text: '#c5c8c6', comment: '#5c6370', string: '#98c379' },
+    };
+    const colors = colorSchemes[evtType] || { keyword: '#00ff41', text: '#c5c8c6', comment: '#5c6370', string: '#e5c07b' };
+
+    // Simple syntax-like coloring heuristics
+    function getCharColor(line, colIdx) {
+        const trimmed = line.trimStart();
+        if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('--')) return colors.comment;
+        const ch = line[colIdx];
+        if (ch === '"' || ch === "'" || ch === '`') return colors.string;
+        // Keywords-ish: if near start of word after indent, and short
+        if (/[{}\[\]()=<>:;,]/.test(ch)) return colors.keyword;
+        if (/[A-Z]/.test(ch)) return colors.keyword;
+        if (/\d/.test(ch)) return colors.string;
+        return colors.text;
+    }
+
+    for (let row = 0; row < maxRows; row++) {
+        const lineIdx = (scrollOffset + row) % lines.length;
+        const line = lines[lineIdx] || '';
+        const lineY = monY + px + row * px * 2;
+        if (lineY >= monY + monH - px) continue;
+
+        // Line number gutter
+        ctx.fillStyle = '#444455';
+        const numStr = String((lineIdx + 1) % 1000);
+        for (let d = 0; d < numStr.length; d++) {
+            if (numStr[d] !== ' ') {
+                ctx.fillRect(monX + px * (0.5 + d * 0.7), lineY, px * 0.5, px - 1);
+            }
+        }
+
+        // Code characters
+        const startCol = Math.floor(px * (1.5 + numStr.length * 0.7));
+        for (let col = 0; col < Math.min(line.length, maxCols); col++) {
+            const ch = line[col];
+            if (ch === ' ' || ch === '\t') continue;
+            ctx.fillStyle = getCharColor(line, col);
+            const cx = monX + startCol + col * (px * 0.7);
+            if (cx + px > monX + monW - px) break;
+            ctx.fillRect(cx, lineY, px * 0.5, px - 1);
+        }
+    }
+
+    // Blinking cursor at end of visible content
+    if (frame % 30 < 15) {
+        const cursorRow = Math.min(maxRows - 1, 3);
+        const cursorLine = lines[(scrollOffset + cursorRow) % lines.length] || '';
+        const numLen = String(((scrollOffset + cursorRow) % lines.length + 1) % 1000).length;
+        const startCol = Math.floor(px * (1.5 + numLen * 0.7));
+        const cursorX = monX + startCol + Math.min(cursorLine.length, maxCols) * (px * 0.7);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(cursorX, monY + px + cursorRow * px * 2, px * 0.5, px * 1.5);
     }
 }
 
@@ -1659,15 +1736,15 @@ function renderChatLog(s) {
     log.innerHTML = '';
     state.inventory = {};
 
-    let lastEventType = null;
+    let lastEvent = null;
 
     s.events.forEach((evt) => {
         appendChatMessage(log, evt, s, false);
-        if (isEventVisible(evt.type)) lastEventType = evt.type;
+        if (isEventVisible(evt.type)) lastEvent = evt;
     });
 
-    if (lastEventType && state.view === 'session') {
-        triggerReaction(lastEventType);
+    if (lastEvent && state.view === 'session') {
+        triggerReaction(lastEvent.type, lastEvent.content);
     }
 
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
@@ -1801,7 +1878,7 @@ function connectSessionWS(filePath) {
             // Trigger webcam reaction for the newest event
             if (msg.events.length > 0) {
                 const lastEvt = msg.events[msg.events.length - 1];
-                triggerReaction(lastEvt.type);
+                triggerReaction(lastEvt.type, lastEvt.content);
             }
 
             const log = document.getElementById('event-log');
@@ -1945,7 +2022,7 @@ function connectMasterWS() {
 
             // Trigger reaction from newest event
             const lastEvt = msg.events[msg.events.length - 1];
-            triggerReaction(lastEvt.type);
+            triggerReaction(lastEvt.type, lastEvt.content);
 
             const log = document.getElementById('event-log');
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
