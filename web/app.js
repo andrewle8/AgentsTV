@@ -1490,9 +1490,14 @@ function addViewerChatMessage() {
     const log = document.getElementById('event-log');
     if (!log) return;
 
+    // ~15% chance of a random viewer tip instead of a chat message
+    if (Math.random() < 0.15) {
+        addRandomViewerTip(log);
+        return;
+    }
+
     const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
     const msg = VIEWER_MESSAGES[Math.floor(Math.random() * VIEWER_MESSAGES.length)];
-    // Random viewer color
     const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
     const color = colors[Math.floor(Math.random() * colors.length)];
 
@@ -1504,6 +1509,50 @@ function addViewerChatMessage() {
     log.appendChild(div);
 
     if (state.autoScroll) log.scrollTop = log.scrollHeight;
+}
+
+function addRandomViewerTip(log) {
+    const amounts = [100, 100, 100, 250, 500, 500, 1000, 2500];
+    const amount = amounts[Math.floor(Math.random() * amounts.length)];
+    const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
+    const tipMessages = [
+        'Keep it up!', 'For the coffee fund ☕', 'Love the stream!',
+        'Ship it! 🚀', 'You earned this', 'Bug free zone 🐛',
+        '💜', 'More pixels pls', 'Coding ASMR 🎧',
+    ];
+    const msg = tipMessages[Math.floor(Math.random() * tipMessages.length)];
+
+    state.tips += amount;
+    if (state.sessionFilePath) persistTips(state.sessionFilePath);
+    renderDonationGoal();
+    triggerReaction('complete');
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg is-tip';
+    div.innerHTML = `<span class="chat-badge">💎</span>`
+        + `<span class="chat-name" style="color:var(--tip-blue)">${esc(name)}</span>`
+        + `<span class="tip-amount">${fmtTokens(amount)} tokens</span> `
+        + `<span class="chat-text">${esc(msg)}</span>`;
+    log.appendChild(div);
+    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+
+    // Streamer reacts
+    setTimeout(() => {
+        const streamerName = state.session
+            ? (Object.values(state.session.agents)[0]?.name || 'Claude')
+            : 'Claude';
+        const reactions = amount >= 2500
+            ? ['OMG thank you!! 😭', 'HUGE!! You\'re amazing!', 'No way!! 🙏']
+            : ['Thanks! 💜', 'Appreciate it! ❤️', 'Ty! 🎉', 'Ayy thanks! 🔥'];
+        const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'chat-msg is-streamer-reply';
+        replyDiv.innerHTML = `<span class="chat-badge">🤖</span>`
+            + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
+            + `<span class="chat-text">${esc(reaction)}</span>`;
+        log.appendChild(replyDiv);
+        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    }, 800 + Math.random() * 1200);
 }
 
 function renderSession() {
