@@ -484,6 +484,8 @@ body {
     line-height: 1.6;
     cursor: pointer;
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 .chat-msg:hover { background: var(--bg-hover); }
 
@@ -659,7 +661,7 @@ body {
     100% { opacity: 0; transform: translateY(-40px); }
 }
 .tip-float {
-    position: absolute;
+    position: fixed;
     color: var(--tip-blue);
     font-weight: 700;
     font-size: 16px;
@@ -673,7 +675,7 @@ body {
     100% { opacity: 0; transform: scale(1.5) translateY(-30px); }
 }
 .heart-float {
-    position: absolute;
+    position: fixed;
     color: var(--red);
     font-size: 20px;
     pointer-events: none;
@@ -753,9 +755,9 @@ body {
 .chat-msg .project-tag {
     background: var(--purple);
     color: white;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
-    padding: 0 5px;
+    padding: 1px 6px;
     border-radius: 3px;
     margin-right: 4px;
     vertical-align: middle;

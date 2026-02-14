@@ -400,7 +400,7 @@ function drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxTyp
         headOffY = Math.sin(frame * 0.15) * px * 0.3;
     } else if (rxType === 'error') {
         headOffY = rxProgress < 0.2 ? -px * 2 * (rxProgress / 0.2) : -px * 2 * (1 - (rxProgress - 0.2) / 0.8);
-        headOffX = (Math.random() - 0.5) * px * (rxProgress < 0.3 ? 2 : 0);
+        headOffX = Math.sin(frame * 1.5) * px * (rxProgress < 0.3 ? 1 : 0);
     } else if (rxType === 'complete') {
         headOffY = -Math.abs(Math.sin(rxProgress * Math.PI * 3)) * px * 2;
     } else if (rxType === 'user') {
@@ -702,12 +702,15 @@ function startPixelAnimation(canvas, seed, isLarge) {
 
     if (state.animFrames.has(id)) cancelAnimationFrame(state.animFrames.get(id));
 
-    function animate() {
+    let lastDraw = 0;
+    function animate(ts) {
+        state.animFrames.set(id, requestAnimationFrame(animate));
+        if (ts - lastDraw < 67) return; // ~15fps
+        lastDraw = ts;
         drawPixelScene(canvas, seed, frame, isLarge);
         frame++;
-        state.animFrames.set(id, requestAnimationFrame(animate));
     }
-    animate();
+    state.animFrames.set(id, requestAnimationFrame(animate));
 }
 
 function stopAllAnimations() {
@@ -765,12 +768,12 @@ async function loadSessions() {
 function connectDashboardWS() {
     if (state.ws) state.ws.close();
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/dashboard`);
-    state.ws = ws;
     const statusEl = document.getElementById('dash-status');
 
-    ws.onopen = () => { statusEl.className = 'conn-status connected'; statusEl.textContent = 'connected'; };
-    ws.onclose = () => { statusEl.className = 'conn-status'; statusEl.textContent = 'offline'; };
+    const ws = connectWithRetry(
+        () => new WebSocket(`${proto}//${location.host}/ws/dashboard`),
+        statusEl, null
+    );
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'sessions') {
@@ -919,7 +922,7 @@ async function showSessionView(filePath) {
         state.chatFullscreen = !state.chatFullscreen;
         const layout = document.querySelector('.stream-layout');
         layout.classList.toggle('chat-fullscreen', state.chatFullscreen);
-        document.getElementById('expand-chat-btn').textContent = state.chatFullscreen ? '⛶' : '⛶';
+        document.getElementById('expand-chat-btn').textContent = state.chatFullscreen ? '⊟' : '⛶';
         document.getElementById('expand-chat-btn').title = state.chatFullscreen ? 'Exit fullscreen chat' : 'Toggle fullscreen chat';
     };
 
@@ -940,6 +943,7 @@ async function showSessionView(filePath) {
         state.session = data;
         initFilters();
         renderSession();
+        setupScrollListener();
         connectSessionWS(filePath);
 
         const canvas = document.getElementById('webcam-canvas');
@@ -1061,6 +1065,60 @@ function renderDonationGoal() {
 // CHAT LOG (Event log as Twitch chat)
 // ============================================================
 
+function appendChatMessage(log, evt, s, isMaster) {
+    if (evt.file_path) {
+        const sp = evt.short_path || evt.file_path;
+        if (evt.type === 'file_create') state.inventory[sp] = 'C';
+        else if (evt.type === 'file_update') state.inventory[sp] = 'W';
+        else if (evt.type === 'file_read' && !state.inventory[sp]) state.inventory[sp] = 'R';
+    }
+
+    if (!isEventVisible(evt.type)) return;
+
+    const agent = isMaster
+        ? (s.agents[evt.agent_id] || s.agents[`${evt.project}:${evt.agent_id}`])
+        : s.agents[evt.agent_id];
+    const agentName = agent ? agent.name : (isMaster && evt.project ? `${evt.project}/${evt.agent_id}` : evt.agent_id);
+    const agentColor = agent ? agent.color : 'white';
+    const isSubagent = agent ? agent.is_subagent : false;
+    const totalTok = evt.input_tokens + evt.output_tokens;
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg' + (totalTok > 0 ? ' has-tokens' : '');
+
+    const badge = CHAT_BADGES[evt.type] || '·';
+    const modBadge = isSubagent ? '🗡' : '';
+    const nameClass = `name-${agentColor}`;
+    const chatText = buildChatText(evt);
+    const tokenHtml = totalTok > 0 ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>` : '';
+    const projectTag = (isMaster && evt.project) ? `<span class="project-tag">${esc(evt.project)}</span>` : '';
+
+    div.innerHTML = `${projectTag}<span class="chat-badge">${badge}</span>`
+        + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
+        + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
+        + `<span class="chat-text">${esc(chatText)}</span>`
+        + tokenHtml;
+
+    const expanded = document.createElement('div');
+    expanded.className = 'chat-expanded';
+    expanded.textContent = evt.content || '(no content)';
+
+    div.addEventListener('click', () => {
+        expanded.style.display = expanded.style.display === 'block' ? 'none' : 'block';
+    });
+
+    log.appendChild(div);
+    log.appendChild(expanded);
+}
+
+function updateChatCounters(s) {
+    document.getElementById('event-count').textContent = `${s.events.length}`;
+    document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
+    document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
+    renderViewerCount();
+    renderViewers();
+}
+
 function renderChatLog(s) {
     const log = document.getElementById('event-log');
     const wasAtBottom = state.autoScroll;
@@ -1069,65 +1127,17 @@ function renderChatLog(s) {
 
     let lastEventType = null;
 
-    s.events.forEach((evt, idx) => {
-        if (evt.file_path) {
-            const sp = evt.short_path || evt.file_path;
-            if (evt.type === 'file_create') state.inventory[sp] = 'C';
-            else if (evt.type === 'file_update') state.inventory[sp] = 'W';
-            else if (evt.type === 'file_read' && !state.inventory[sp]) state.inventory[sp] = 'R';
-        }
-
-        if (!isEventVisible(evt.type)) return;
-
-        const agent = s.agents[evt.agent_id];
-        const agentName = agent ? agent.name : evt.agent_id;
-        const agentColor = agent ? agent.color : 'white';
-        const isSubagent = agent ? agent.is_subagent : false;
-        const totalTok = evt.input_tokens + evt.output_tokens;
-
-        const div = document.createElement('div');
-        div.className = 'chat-msg' + (totalTok > 0 ? ' has-tokens' : '');
-
-        const badge = CHAT_BADGES[evt.type] || '·';
-        const modBadge = isSubagent ? '🗡' : '';
-        const nameClass = `name-${agentColor}`;
-        const chatText = buildChatText(evt);
-        const tokenHtml = totalTok > 0
-            ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>`
-            : '';
-
-        div.innerHTML = `<span class="chat-badge">${badge}</span>`
-            + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
-            + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
-            + `<span class="chat-text">${esc(chatText)}</span>`
-            + tokenHtml;
-
-        const expanded = document.createElement('div');
-        expanded.className = 'chat-expanded';
-        expanded.textContent = evt.content || '(no content)';
-
-        div.addEventListener('click', () => {
-            expanded.style.display = expanded.style.display === 'block' ? 'none' : 'block';
-        });
-
-        log.appendChild(div);
-        log.appendChild(expanded);
-
-        lastEventType = evt.type;
+    s.events.forEach((evt) => {
+        appendChatMessage(log, evt, s, false);
+        if (isEventVisible(evt.type)) lastEventType = evt.type;
     });
 
-    // Trigger reaction for the last event type (on initial load, pick the most recent interesting one)
     if (lastEventType && state.view === 'session') {
         triggerReaction(lastEventType);
     }
 
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
-
-    document.getElementById('event-count').textContent = `${s.events.length}`;
-    document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
-    document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
-    renderViewerCount();
-    renderViewers();
+    updateChatCounters(s);
 }
 
 function buildChatText(evt) {
@@ -1206,24 +1216,44 @@ function isEventVisible(type) { return state.filters[type] !== false; }
 // WEBSOCKET
 // ============================================================
 
+function connectWithRetry(createWsFn, statusEl, liveBadge) {
+    let retryDelay = 1000;
+    let ws = null;
+
+    function connect() {
+        ws = createWsFn();
+
+        ws.addEventListener('open', () => {
+            retryDelay = 1000;
+            if (statusEl) { statusEl.className = 'conn-status connected'; statusEl.textContent = liveBadge ? 'live' : 'connected'; }
+            if (liveBadge) liveBadge.style.display = 'inline';
+        });
+
+        ws.addEventListener('close', () => {
+            if (statusEl) { statusEl.className = 'conn-status'; statusEl.textContent = 'offline'; }
+            if (liveBadge) liveBadge.style.display = 'none';
+            setTimeout(() => {
+                if (state.ws === ws) connect();
+            }, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 30000);
+        });
+
+        state.ws = ws;
+        return ws;
+    }
+
+    return connect();
+}
+
 function connectSessionWS(filePath) {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/session/${encodeURIComponent(filePath)}`);
-    state.ws = ws;
-
     const statusEl = document.getElementById('session-status');
     const liveBadge = document.getElementById('live-badge');
 
-    ws.onopen = () => {
-        statusEl.className = 'conn-status connected';
-        statusEl.textContent = 'live';
-        liveBadge.style.display = 'inline';
-    };
-    ws.onclose = () => {
-        statusEl.className = 'conn-status';
-        statusEl.textContent = 'offline';
-        liveBadge.style.display = 'none';
-    };
+    const ws = connectWithRetry(
+        () => new WebSocket(`${proto}//${location.host}/ws/session/${encodeURIComponent(filePath)}`),
+        statusEl, liveBadge
+    );
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'full') {
@@ -1244,11 +1274,15 @@ function connectSessionWS(filePath) {
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
             state.autoScroll = atBottom;
 
-            renderChatLog(state.session);
+            // Append only new events instead of rebuilding
+            msg.events.forEach(evt => appendChatMessage(log, evt, state.session, false));
+            updateChatCounters(state.session);
             renderMods(state.session);
             renderDonationGoal();
 
-            if (!atBottom) {
+            if (atBottom) {
+                log.scrollTop = log.scrollHeight;
+            } else {
                 const badge = document.getElementById('new-events-badge');
                 badge.textContent = `${msg.events.length} new`;
                 badge.style.display = 'inline';
@@ -1291,6 +1325,8 @@ async function showMasterChannel() {
     document.getElementById('expand-chat-btn').onclick = () => {
         state.chatFullscreen = !state.chatFullscreen;
         document.querySelector('.stream-layout').classList.toggle('chat-fullscreen', state.chatFullscreen);
+        document.getElementById('expand-chat-btn').textContent = state.chatFullscreen ? '⊟' : '⛶';
+        document.getElementById('expand-chat-btn').title = state.chatFullscreen ? 'Exit fullscreen chat' : 'Toggle fullscreen chat';
     };
 
     document.getElementById('like-count').textContent = state.likes;
@@ -1314,6 +1350,7 @@ async function showMasterChannel() {
 
         initFilters();
         renderMasterSession();
+        setupScrollListener();
         connectMasterWS();
 
         const canvas = document.getElementById('webcam-canvas');
@@ -1343,77 +1380,23 @@ function renderMasterChatLog(s) {
     log.innerHTML = '';
     state.inventory = {};
 
-    s.events.forEach((evt, idx) => {
-        if (evt.file_path) {
-            const sp = evt.short_path || evt.file_path;
-            if (evt.type === 'file_create') state.inventory[sp] = 'C';
-            else if (evt.type === 'file_update') state.inventory[sp] = 'W';
-            else if (evt.type === 'file_read' && !state.inventory[sp]) state.inventory[sp] = 'R';
-        }
-
-        if (!isEventVisible(evt.type)) return;
-
-        const agent = s.agents[evt.agent_id] || s.agents[`${evt.project}:${evt.agent_id}`];
-        const agentName = agent ? agent.name : (evt.project ? `${evt.project}/${evt.agent_id}` : evt.agent_id);
-        const agentColor = agent ? agent.color : 'white';
-        const isSubagent = agent ? agent.is_subagent : false;
-        const totalTok = evt.input_tokens + evt.output_tokens;
-
-        const div = document.createElement('div');
-        div.className = 'chat-msg' + (totalTok > 0 ? ' has-tokens' : '');
-
-        const badge = CHAT_BADGES[evt.type] || '·';
-        const modBadge = isSubagent ? '🗡' : '';
-        const nameClass = `name-${agentColor}`;
-        const chatText = buildChatText(evt);
-        const tokenHtml = totalTok > 0 ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>` : '';
-        const projectTag = evt.project ? `<span class="project-tag">${esc(evt.project)}</span>` : '';
-
-        div.innerHTML = `${projectTag}<span class="chat-badge">${badge}</span>`
-            + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
-            + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
-            + `<span class="chat-text">${esc(chatText)}</span>`
-            + tokenHtml;
-
-        const expanded = document.createElement('div');
-        expanded.className = 'chat-expanded';
-        expanded.textContent = evt.content || '(no content)';
-
-        div.addEventListener('click', () => {
-            expanded.style.display = expanded.style.display === 'block' ? 'none' : 'block';
-        });
-
-        log.appendChild(div);
-        log.appendChild(expanded);
+    s.events.forEach((evt) => {
+        appendChatMessage(log, evt, s, true);
     });
 
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
-
-    document.getElementById('event-count').textContent = `${s.events.length}`;
-    document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
-    document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
-    renderViewerCount();
-    renderViewers();
+    updateChatCounters(s);
 }
 
 function connectMasterWS() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/master`);
-    state.ws = ws;
-
     const statusEl = document.getElementById('session-status');
     const liveBadge = document.getElementById('live-badge');
 
-    ws.onopen = () => {
-        statusEl.className = 'conn-status connected';
-        statusEl.textContent = 'live';
-        liveBadge.style.display = 'inline';
-    };
-    ws.onclose = () => {
-        statusEl.className = 'conn-status';
-        statusEl.textContent = 'offline';
-        liveBadge.style.display = 'none';
-    };
+    const ws = connectWithRetry(
+        () => new WebSocket(`${proto}//${location.host}/ws/master`),
+        statusEl, liveBadge
+    );
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'delta' && state.session && msg.events.length > 0) {
@@ -1433,11 +1416,14 @@ function connectMasterWS() {
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
             state.autoScroll = atBottom;
 
-            renderMasterChatLog(state.session);
+            msg.events.forEach(evt => appendChatMessage(log, evt, state.session, true));
+            updateChatCounters(state.session);
             renderMods(state.session);
             renderDonationGoal();
 
-            if (!atBottom) {
+            if (atBottom) {
+                log.scrollTop = log.scrollHeight;
+            } else {
                 const badge = document.getElementById('new-events-badge');
                 badge.textContent = `${msg.events.length} new`;
                 badge.style.display = 'inline';
@@ -1458,12 +1444,15 @@ function startControlRoomAnimation(canvas) {
     canvas.dataset.animId = id;
     if (state.animFrames.has(id)) cancelAnimationFrame(state.animFrames.get(id));
 
-    function animate() {
+    let lastDraw = 0;
+    function animate(ts) {
+        state.animFrames.set(id, requestAnimationFrame(animate));
+        if (ts - lastDraw < 67) return;
+        lastDraw = ts;
         drawControlRoom(canvas, frame);
         frame++;
-        state.animFrames.set(id, requestAnimationFrame(animate));
     }
-    animate();
+    state.animFrames.set(id, requestAnimationFrame(animate));
 }
 
 function drawControlRoom(canvas, frame) {
@@ -1585,22 +1574,22 @@ function drawControlRoom(canvas, frame) {
 // INIT
 // ============================================================
 
+function setupScrollListener() {
+    const log = document.getElementById('event-log');
+    if (log && !log.dataset.scrollBound) {
+        log.dataset.scrollBound = '1';
+        log.addEventListener('scroll', () => {
+            state.autoScroll = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+            if (state.autoScroll) {
+                const badge = document.getElementById('new-events-badge');
+                if (badge) badge.style.display = 'none';
+            }
+        }, { passive: true });
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     handleRoute();
-
-    const observer = new MutationObserver(() => {
-        const log = document.getElementById('event-log');
-        if (log) {
-            log.addEventListener('scroll', () => {
-                state.autoScroll = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-                if (state.autoScroll) {
-                    const badge = document.getElementById('new-events-badge');
-                    if (badge) badge.style.display = 'none';
-                }
-            }, { passive: true });
-        }
-    });
-    observer.observe(document.getElementById('app'), { childList: true, subtree: true });
 });
 
 // ============================================================
