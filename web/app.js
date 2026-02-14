@@ -72,6 +72,7 @@ let state = {
     typingSpeed: 1.0,     // multiplier for typing animation speed
     sessionFilePath: '',  // for localStorage key
     chatFullscreen: false,
+    viewerChatTimer: null,
     // Master channel state
     masterEvents: [],
     masterAgents: {},
@@ -1123,6 +1124,7 @@ function navigate(hash) { window.location.hash = hash; }
 
 function handleRoute() {
     stopAllAnimations();
+    stopViewerChat();
     state.reaction = null;
     state.typingSpeed = 1.0;
     state.chatFullscreen = false;
@@ -1346,6 +1348,7 @@ async function showSessionView(filePath) {
         const canvas = document.getElementById('webcam-canvas');
         const seed = hashCode(filePath) % PALETTES.length;
         startPixelAnimation(canvas, seed, true);
+        startViewerChat();
     } catch (e) {
         document.getElementById('event-log').innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
     }
@@ -1434,6 +1437,71 @@ function addTipToChat(amount) {
         log.appendChild(replyDiv);
         if (state.autoScroll) log.scrollTop = log.scrollHeight;
     }, 800 + Math.random() * 1200);
+
+    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+}
+
+const VIEWER_NAMES = [
+    'viewer_42', 'code_fan99', 'pixel_dev', 'stream_lurker', 'bug_hunter',
+    'git_pusher', 'regex_queen', 'null_ptr', 'sudo_user', 'mr_merge',
+    'debug_diva', 'pr_approved', 'stack_overflow', 'tab_hoarder', 'vim_exit',
+    'semicolon_sam', 'async_anna', 'monorepo_mike', 'lint_error', 'deploy_dan',
+];
+
+const VIEWER_MESSAGES = [
+    // General hype
+    'LFG 🔥', 'this is clean', 'sheeeesh', 'nice', 'W', 'Pog', 'lets goooo',
+    'so good', 'insane', '👀', '💯', 'ez clap', 'built different',
+    // Code reactions
+    'that refactor tho', 'ship it!', 'clean af', 'no bugs pls',
+    'that function name 😂', 'why not use recursion', 'types are everything',
+    'imagine not using git', 'just use a hashmap', 'O(n) gang',
+    // Questions
+    'what lang is this?', 'can you explain that?', 'what IDE is that?',
+    'how long have you been coding?', 'whats the tech stack?',
+    // Backseat coding
+    'you missed a semicolon', 'off by one error incoming',
+    'that variable name tho', 'needs more comments', 'LGTM',
+    'should add tests for that', 'edge case alert 🚨',
+    // Emotes
+    '🚀🚀🚀', '🐛', '☕', '⌨️💨', '🧠', '✨',
+];
+
+function startViewerChat() {
+    stopViewerChat();
+    function scheduleNext() {
+        const delay = 4000 + Math.random() * 12000; // 4-16s between messages
+        state.viewerChatTimer = setTimeout(() => {
+            addViewerChatMessage();
+            scheduleNext();
+        }, delay);
+    }
+    scheduleNext();
+}
+
+function stopViewerChat() {
+    if (state.viewerChatTimer) {
+        clearTimeout(state.viewerChatTimer);
+        state.viewerChatTimer = null;
+    }
+}
+
+function addViewerChatMessage() {
+    const log = document.getElementById('event-log');
+    if (!log) return;
+
+    const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
+    const msg = VIEWER_MESSAGES[Math.floor(Math.random() * VIEWER_MESSAGES.length)];
+    // Random viewer color
+    const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg viewer-chat';
+    div.innerHTML = `<span class="chat-badge">💬</span>`
+        + `<span class="chat-name" style="color:${color}">${esc(name)}</span>`
+        + `<span class="chat-text">${esc(msg)}</span>`;
+    log.appendChild(div);
 
     if (state.autoScroll) log.scrollTop = log.scrollHeight;
 }
@@ -1772,6 +1840,7 @@ async function showMasterChannel() {
 
         const canvas = document.getElementById('webcam-canvas');
         startControlRoomAnimation(canvas);
+        startViewerChat();
     } catch (e) {
         document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
     }
