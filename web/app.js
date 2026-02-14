@@ -331,23 +331,22 @@ let _previousProvider = 'ollama';
             }
             log.appendChild(replyDiv);
         } catch (e) {
-            loadDiv.remove();
+            try { loadDiv.remove(); } catch (_) {}
             const errDiv = document.createElement('div');
             errDiv.className = 'chat-msg llm-reply';
             errDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
                 + `<span class="chat-name" style="color:var(--green)">assistant</span>`
                 + `<span class="chat-text" style="color:var(--red-soft)">Failed to reach LLM</span>`;
             log.appendChild(errDiv);
+        } finally {
+            // Always re-enable input
+            state.replyToEventIndex = null;
+            if (replyPreview) replyPreview.style.display = 'none';
+            input.disabled = false;
+            sendBtn.disabled = false;
+            input.focus();
+            if (state.autoScroll) log.scrollTop = log.scrollHeight;
         }
-
-        // Clear reply-to state
-        state.replyToEventIndex = null;
-        if (replyPreview) replyPreview.style.display = 'none';
-
-        input.disabled = false;
-        sendBtn.disabled = false;
-        input.focus();
-        if (state.autoScroll) log.scrollTop = log.scrollHeight;
     }
 
     sendBtn.addEventListener('click', sendMessage);
