@@ -2926,7 +2926,7 @@ function drawControlRoom(canvas, frame) {
 
     // Monitor wall region
     const wallLeft = w * 0.06;
-    const wallRight = w * 0.94;
+    const wallRight = w * 0.86;
     const wallTop = h * 0.03;
     const wallBottom = Math.min(h * (0.28 + rows * 0.14), h * 0.72);
 
