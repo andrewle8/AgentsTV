@@ -2022,24 +2022,29 @@ const VIEWER_MESSAGES_BY_TYPE = {
         'that edit is clean', 'ship it!', 'LGTM',
         'how many lines was that', 'love the naming', 'that function tho',
         'the abstraction is solid', 'clean commit incoming',
-        'should probably add a docstring there', 'watch the cyclomatic complexity',
-        'extract that into a helper?', 'nice separation of concerns',
-        'the type hints are chefs kiss', 'that return early pattern tho',
+        'watch the cyclomatic complexity', 'extract that into a helper?',
+        'nice separation of concerns', 'that return early pattern tho',
         'DRY violation or intentional?', 'single responsibility W',
+        'bet that broke something', 'was that a refactor or a feature',
+        'diff looks clean from here', 'indent game strong',
+        'bold move changing that', 'hope theres a test for that',
     ],
     file_create: [
         'new file just dropped', 'fresh module 🔥', 'the architecture is growing',
         'building out the project structure', 'nice scaffolding',
         'should that be a separate package?', 'good call on the file split',
-        'init file or barrel export?', 'add it to .gitignore?',
+        'add it to .gitignore?', 'modular design W',
+        'the file tree is getting deep', 'clean project layout',
     ],
     bash: [
         'terminal wizard', 'that command tho 🧙', 'pipe gang',
         'one-liner king', 'just grep it', 'shell scripting arc',
         'the flags on that command', 'thats a lot of output',
         'redirect stderr too', 'add set -e at the top',
-        'use xargs instead of the loop', 'that pipe chain is elegant',
-        'curl | jq gang', 'should probably quote those vars',
+        'that pipe chain is elegant', 'curl | jq gang',
+        'should probably quote those vars', 'exit code 0 lets go',
+        'alias that command', 'xargs would be faster',
+        'did that just install something', 'watch out for rm -rf',
     ],
     error: [
         'RIP 💀', 'F in chat', 'stack trace arc',
@@ -2048,29 +2053,43 @@ const VIEWER_MESSAGES_BY_TYPE = {
         'is that a race condition?', 'null reference strikes again',
         'missing import maybe?', 'wrong argument order probably',
         'did the types change upstream?', 'try adding a breakpoint there',
+        'seen this before its the config', 'oh no the build broke',
+        'revert revert revert', 'have you tried turning it off and on',
     ],
     think: [
         'the thinking phase 🧠', 'planning arc', 'galaxy brain moment',
         'cooking something up', 'big brain time', 'strategizing',
         'architecture review in progress', 'weighing the tradeoffs',
         'considering the edge cases', 'this is the important part',
+        'thats a long think', 'must be a hard one',
+        'the plan is forming', 'hope it picks the right approach',
     ],
     tool_call: [
         'tool usage on point', 'using the right tool for the job',
         'that tool call was fast', 'automation ftw',
         'good call reaching for grep first', 'should cache that result',
         'batch those calls maybe?', 'nice API choice',
+        'the tooling in this project tho', 'thats a smart integration',
+        'how many tools does it have', 'tool-assisted speedrun',
     ],
     complete: [
         'GG 🎉', 'LETS GOOO', 'task complete W',
         'another one done', 'speedrun strats',
         'tests passing?', 'time for code review', 'push it!',
         'merge and ship', 'clean implementation',
+        'that was fast', 'commit and move on', 'next task incoming',
     ],
     spawn: [
         'new agent just dropped', 'subagent arc', 'parallel processing moment',
         'deploying reinforcements', 'the squad is growing',
         'divide and conquer approach', 'smart to parallelize that',
+        'how many agents now', 'multithreaded coding',
+        'the swarm grows', 'agent army assembling',
+    ],
+    text: [
+        'reading the output', 'long response incoming',
+        'thats a wall of text', 'TLDR?', 'summarize pls',
+        'the explanation is solid', 'good context',
     ],
 };
 
@@ -2080,9 +2099,54 @@ const VIEWER_MESSAGES_GENERIC = [
     'should write a test for that', 'add error handling there',
     'whats the time complexity on that?', 'consider the edge cases',
     'is there a linter running?', 'the naming convention is consistent',
-    'wonder what the memory footprint looks like', 'version control is key',
-    'any benchmarks on this?', 'solid project structure',
+    'wonder what the memory footprint looks like', 'any benchmarks on this?',
+    'solid project structure', 'how long has this been going',
+    'first time catching the stream', 'this is better than Netflix',
+    'learn so much from these streams', 'real ones are watching',
 ];
+
+// Generate a context-aware fallback message using recent event data
+function _dynamicFallback(evt) {
+    const fpath = evt.short_path || evt.file_path || '';
+    const fname = fpath.split('/').pop() || '';
+    const proj = evt.project || '';
+    const tool = evt.tool_name || '';
+
+    // Templates that reference real data from the event
+    const templates = [];
+    if (fname) {
+        templates.push(
+            `${fname} getting the attention it deserves`,
+            `changes to ${fname} look solid`,
+            `${fname} is evolving`,
+            `that ${fname} edit tho`,
+            `wonder how big ${fname} is now`,
+            `${fname} diff is gonna be interesting`,
+        );
+    }
+    if (proj) {
+        templates.push(
+            `${proj} is coming along`,
+            `${proj} getting some love`,
+            `whats the status on ${proj}`,
+            `${proj} making progress`,
+        );
+    }
+    if (tool) {
+        templates.push(
+            `${tool} is the right call here`,
+            `using ${tool} smart`,
+        );
+    }
+    if (templates.length > 0) {
+        return templates[Math.floor(Math.random() * templates.length)];
+    }
+    return null;
+}
+
+// Track recently used messages to avoid repeats
+const _recentFallbacks = [];
+const _MAX_RECENT = 30;
 
 function startViewerChat() {
     stopViewerChat();
@@ -2217,15 +2281,33 @@ function addViewerChatMessage() {
         // Refill when running low (start early so LLM has time)
         if (viewerChatQueue.length <= 3) fetchViewerChatBatch();
     } else {
-        // Fallback — pick from event-specific pool when possible
+        // Fallback — pick from event-specific pool, prefer dynamic context-aware messages
         name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
-        let pool = VIEWER_MESSAGES_GENERIC;
-        if (state.session && state.session.events && state.session.events.length) {
-            const recent = state.session.events[state.session.events.length - 1];
-            const typed = VIEWER_MESSAGES_BY_TYPE[recent.type];
-            if (typed && Math.random() < 0.7) pool = typed;
+        const evts = state.session && state.session.events;
+        // Sample from a few recent events (not just the latest) for variety
+        const recentIdx = evts ? Math.max(0, evts.length - 10) + Math.floor(Math.random() * Math.min(10, evts.length)) : -1;
+        const recent = recentIdx >= 0 ? evts[recentIdx] : null;
+
+        // 50% chance: try a dynamic message referencing actual file/project data
+        if (recent && Math.random() < 0.5) {
+            msg = _dynamicFallback(recent);
         }
-        msg = pool[Math.floor(Math.random() * pool.length)];
+        // Otherwise use typed pool or generic
+        if (!msg) {
+            let pool = VIEWER_MESSAGES_GENERIC;
+            if (recent) {
+                const typed = VIEWER_MESSAGES_BY_TYPE[recent.type];
+                if (typed && Math.random() < 0.7) pool = typed;
+            }
+            msg = pool[Math.floor(Math.random() * pool.length)];
+        }
+        // Dedup — reroll once if we just said this
+        if (_recentFallbacks.includes(msg)) {
+            const pool = VIEWER_MESSAGES_GENERIC;
+            msg = pool[Math.floor(Math.random() * pool.length)];
+        }
+        _recentFallbacks.push(msg);
+        if (_recentFallbacks.length > _MAX_RECENT) _recentFallbacks.shift();
         // Try to fill queue for next time
         if (!viewerChatFetching) fetchViewerChatBatch();
     }

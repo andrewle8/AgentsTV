@@ -255,6 +255,9 @@ def _build_context(session_data: dict, n: int = 5) -> str:
 
         # Build a rich single-line description
         parts = [f"[{kind}]"]
+        project = evt.get("project", "")
+        if project:
+            parts.append(f"project={project}")
         if tool:
             parts.append(f"tool={tool}")
         if fpath:
