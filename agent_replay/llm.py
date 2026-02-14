@@ -34,7 +34,7 @@ SYSTEM_PROMPT_NARRATOR = (
 # Provider config — set via env vars or CLI flags
 LLM_PROVIDER: str = os.environ.get("AGENTSTV_LLM", "ollama")
 OLLAMA_URL: str = os.environ.get("AGENTSTV_OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "mistral-small3.2")
+OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "qwen3:14b")
 OPENAI_KEY: str = os.environ.get("AGENTSTV_OPENAI_KEY", "")
 OPENAI_MODEL: str = os.environ.get("AGENTSTV_OPENAI_MODEL", "gpt-4o-mini")
 
