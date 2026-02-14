@@ -82,6 +82,78 @@ let state = {
 };
 
 // ============================================================
+// SETTINGS PANEL
+// ============================================================
+
+async function openSettings() {
+    const overlay = document.getElementById('settings-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('settings-msg').textContent = '';
+    try {
+        const resp = await fetch('/api/settings');
+        const cfg = await resp.json();
+        document.getElementById('s-provider').value = cfg.provider || 'ollama';
+        document.getElementById('s-ollama-url').value = cfg.ollama_url || '';
+        document.getElementById('s-ollama-model').value = cfg.ollama_model || '';
+        document.getElementById('s-openai-key').value = '';
+        document.getElementById('s-openai-key').placeholder = cfg.openai_key || 'sk-…';
+        document.getElementById('s-openai-model').value = cfg.openai_model || '';
+        toggleProviderFields();
+    } catch (e) {
+        document.getElementById('settings-msg').textContent = 'Failed to load settings';
+        document.getElementById('settings-msg').className = 'settings-msg err';
+    }
+}
+
+function closeSettings() {
+    document.getElementById('settings-overlay').style.display = 'none';
+}
+
+function toggleProviderFields() {
+    const provider = document.getElementById('s-provider').value;
+    document.getElementById('s-ollama-fields').style.display = provider === 'ollama' ? '' : 'none';
+    document.getElementById('s-openai-fields').style.display = provider === 'openai' ? '' : 'none';
+}
+
+async function saveSettings(e) {
+    e.preventDefault();
+    const msg = document.getElementById('settings-msg');
+    const body = { provider: document.getElementById('s-provider').value };
+    if (body.provider === 'ollama') {
+        body.ollama_url = document.getElementById('s-ollama-url').value;
+        body.ollama_model = document.getElementById('s-ollama-model').value;
+    } else {
+        const key = document.getElementById('s-openai-key').value;
+        if (key) body.openai_key = key;
+        body.openai_model = document.getElementById('s-openai-model').value;
+    }
+    try {
+        const resp = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) throw new Error('Save failed');
+        msg.textContent = 'Saved';
+        msg.className = 'settings-msg ok';
+        setTimeout(closeSettings, 800);
+    } catch (e) {
+        msg.textContent = 'Error saving settings';
+        msg.className = 'settings-msg err';
+    }
+}
+
+(function initSettings() {
+    document.getElementById('settings-btn').addEventListener('click', openSettings);
+    document.getElementById('settings-close-btn').addEventListener('click', closeSettings);
+    document.getElementById('settings-overlay').addEventListener('click', function(e) {
+        if (e.target === this) closeSettings();
+    });
+    document.getElementById('s-provider').addEventListener('change', toggleProviderFields);
+    document.getElementById('settings-form').addEventListener('submit', saveSettings);
+})();
+
+// ============================================================
 // PERSISTENT TIPS (localStorage)
 // ============================================================
 

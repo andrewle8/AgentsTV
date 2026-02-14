@@ -18,6 +18,7 @@
                     <span class="nav-item">Following</span>
                 </nav>
                 <span class="top-spacer"></span>
+                <button id="settings-btn" class="settings-btn" title="LLM Settings">⚙</button>
                 <span id="dash-status" class="conn-status"></span>
             </header>
             <div class="browse-header">
@@ -113,6 +114,39 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+        <!-- Settings Modal -->
+        <div id="settings-overlay" class="settings-overlay" style="display:none">
+            <div class="settings-modal">
+                <div class="settings-header">
+                    <span>LLM Settings</span>
+                    <button id="settings-close-btn" class="settings-close-btn">&times;</button>
+                </div>
+                <form id="settings-form" class="settings-form">
+                    <label class="settings-label">Provider</label>
+                    <select id="s-provider" class="settings-input">
+                        <option value="ollama">Ollama</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+
+                    <div id="s-ollama-fields">
+                        <label class="settings-label">Ollama URL</label>
+                        <input id="s-ollama-url" class="settings-input" type="text" placeholder="http://localhost:11434">
+                        <label class="settings-label">Ollama Model</label>
+                        <input id="s-ollama-model" class="settings-input" type="text" placeholder="mistral-small3.2">
+                    </div>
+
+                    <div id="s-openai-fields" style="display:none">
+                        <label class="settings-label">API Key</label>
+                        <input id="s-openai-key" class="settings-input" type="password" placeholder="sk-…">
+                        <label class="settings-label">OpenAI Model</label>
+                        <input id="s-openai-model" class="settings-input" type="text" placeholder="gpt-4o-mini">
+                    </div>
+
+                    <button type="submit" class="settings-save-btn">Save</button>
+                    <div id="settings-msg" class="settings-msg"></div>
+                </form>
             </div>
         </div>
     </div>

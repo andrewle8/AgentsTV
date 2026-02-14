@@ -10,7 +10,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -109,6 +109,25 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/api/settings")
+async def get_settings():
+    return llm.get_settings()
+
+
+@app.put("/api/settings")
+async def put_settings(request: Request):
+    body = await request.json()
+    llm.configure(
+        provider=body.get("provider"),
+        ollama_url=body.get("ollama_url"),
+        ollama_model=body.get("ollama_model"),
+        openai_key=body.get("openai_key"),
+        openai_model=body.get("openai_model"),
+    )
+    _chat_buffers.clear()
+    return llm.get_settings()
 
 
 @app.get("/api/sessions")

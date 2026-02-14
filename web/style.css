@@ -813,6 +813,110 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* === SETTINGS MODAL === */
+.settings-btn {
+    background: var(--bg-surface2);
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.settings-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings-modal {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 380px;
+    max-width: 90vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.settings-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+}
+.settings-close-btn:hover { color: var(--text); }
+
+.settings-form {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+
+.settings-input {
+    background: var(--bg-surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    width: 100%;
+}
+.settings-input:focus { border-color: var(--purple); }
+select.settings-input { cursor: pointer; }
+
+.settings-save-btn {
+    background: var(--purple);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+}
+.settings-save-btn:hover { background: var(--purple-dark); }
+
+.settings-msg {
+    font-size: 12px;
+    text-align: center;
+    min-height: 18px;
+}
+.settings-msg.ok { color: var(--green); }
+.settings-msg.err { color: var(--red-soft); }
+
 /* Responsive */
 @media (max-width: 900px) {
     .chat-sidebar { width: 280px; min-width: 240px; }

@@ -46,6 +46,20 @@ def configure(
         OPENAI_MODEL = openai_model
 
 
+def get_settings() -> dict:
+    """Return current LLM configuration (OpenAI key is masked)."""
+    masked_key = ""
+    if OPENAI_KEY:
+        masked_key = OPENAI_KEY[:3] + "…" + OPENAI_KEY[-4:] if len(OPENAI_KEY) > 8 else "••••"
+    return {
+        "provider": LLM_PROVIDER,
+        "ollama_url": OLLAMA_URL,
+        "ollama_model": OLLAMA_MODEL,
+        "openai_key": masked_key,
+        "openai_model": OPENAI_MODEL,
+    }
+
+
 async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
     """Generate viewer chat messages using the configured LLM provider.
 
