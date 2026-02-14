@@ -1415,6 +1415,26 @@ function addTipToChat(amount) {
         + `<span class="chat-text">${esc(msg)}</span>`;
     log.appendChild(div);
 
+    // Streamer reacts to tip in chat
+    setTimeout(() => {
+        const streamerName = state.session
+            ? (Object.values(state.session.agents)[0]?.name || 'Claude')
+            : 'Claude';
+        const reactions = amount >= 2500
+            ? ['OMG thank you so much!! 😭', 'HUGE tip! You are incredible!', 'No way!! Thank you!! 🙏',
+               'I literally can\'t right now 😭💜', 'GOAT viewer right here!!!']
+            : ['Thanks for the tip! 💜', 'Appreciate it! ❤️', 'You\'re awesome, ty!',
+               'Ayy thanks! 🎉', 'Let\'s gooo, ty! 🔥', 'Much love! 💜'];
+        const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'chat-msg is-streamer-reply';
+        replyDiv.innerHTML = `<span class="chat-badge">🤖</span>`
+            + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
+            + `<span class="chat-text">${esc(reaction)}</span>`;
+        log.appendChild(replyDiv);
+        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    }, 800 + Math.random() * 1200);
+
     if (state.autoScroll) log.scrollTop = log.scrollHeight;
 }
 
