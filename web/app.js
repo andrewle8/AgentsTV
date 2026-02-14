@@ -2063,8 +2063,8 @@ const VIEWER_MESSAGES_GENERIC = [
 
 function startViewerChat() {
     stopViewerChat();
-    // Pre-fetch LLM messages if enabled
-    if (state.llmEnabled) fetchViewerChatBatch();
+    // Pre-fetch LLM messages before starting the chat timer
+    const ready = state.llmEnabled ? fetchViewerChatBatch() : Promise.resolve();
     function scheduleNext() {
         const delay = 3000 + Math.random() * 7000; // 3-10s between messages
         state.viewerChatTimer = setTimeout(() => {
@@ -2072,7 +2072,7 @@ function startViewerChat() {
             scheduleNext();
         }, delay);
     }
-    scheduleNext();
+    ready.then(() => scheduleNext());
     // Also start narrator if LLM is on
     if (state.llmEnabled) startNarratorChat();
 }

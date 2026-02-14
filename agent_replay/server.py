@@ -652,6 +652,19 @@ def main(args: list[str] | None = None) -> None:
     mode = " (PUBLIC MODE — secrets redacted)" if PUBLIC_MODE else ""
     print(f"agent-replay v{__version__} — starting at {url}{mode}")
 
+    # LLM health check
+    if llm.LLM_PROVIDER != "off":
+        try:
+            import httpx as _hx
+            r = _hx.get(f"{llm.OLLAMA_URL}/api/tags", timeout=3.0)
+            models = [m["name"] for m in r.json().get("models", [])]
+            if llm.OLLAMA_MODEL in models:
+                print(f"  LLM: {llm.OLLAMA_MODEL} via Ollama (ready)")
+            else:
+                print(f"  LLM: Ollama reachable but model '{llm.OLLAMA_MODEL}' not found (available: {', '.join(models[:5])})")
+        except Exception:
+            print(f"  LLM: cannot reach Ollama at {llm.OLLAMA_URL} — viewer chat will use fallback messages")
+
     if not no_browser:
         # Open browser after a short delay to let server start
         import threading

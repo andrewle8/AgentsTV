@@ -132,8 +132,9 @@ async def generate_viewer_messages(
         else:
             return await _call_ollama(user_prompt + _NO_THINK, system, count=count), ""
     except Exception as exc:
-        log.warning("LLM viewer-chat call failed: %s", exc)
-        return [], str(exc)
+        err = str(exc) or type(exc).__name__
+        log.warning("LLM viewer-chat call failed: %s", err)
+        return [], err
 
 
 async def generate_interactive_reply(
@@ -163,7 +164,7 @@ async def generate_interactive_reply(
         else:
             return await _call_ollama(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
     except Exception as exc:
-        log.warning("Interactive LLM call failed: %s", exc)
+        log.warning("Interactive LLM call failed: %s", str(exc) or type(exc).__name__)
         return ""
 
 
@@ -187,7 +188,7 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
         else:
             return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_NARRATOR, count=count)
     except Exception as exc:
-        log.warning("Narrator LLM call failed: %s", exc)
+        log.warning("Narrator LLM call failed: %s", str(exc) or type(exc).__name__)
         return []
 
 
@@ -210,7 +211,7 @@ async def generate_viewer_reaction(user_message: str) -> list[str]:
         else:
             return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_REACT, count=2)
     except Exception as exc:
-        log.warning("Viewer reaction LLM call failed: %s", exc)
+        log.warning("Viewer reaction LLM call failed: %s", str(exc) or type(exc).__name__)
         return []
 
 
@@ -287,6 +288,11 @@ def _parse_response(text: str, count: int) -> list[str]:
                     if isinstance(v, list):
                         data = v
                         break
+                else:
+                    # Dict with only string values — extract them
+                    strings = [str(v) for v in data.values() if v and isinstance(v, str)]
+                    if strings:
+                        return strings[:count]
         if isinstance(data, list):
             return [str(m) for m in data if m][:count]
     except json.JSONDecodeError:
