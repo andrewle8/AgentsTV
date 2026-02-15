@@ -4,6 +4,12 @@ Twitch-style live visualizer for Claude Code sessions. Watch AI code monkeys wor
 
 ![AgentsTV screenshot](screenshot.png)
 
+## The Build
+
+The idea started as a simple TUI to replay Claude Code session logs. I built the first version, went to bed, and woke up wanting something completely different: a Twitch-style live dashboard with pixel art characters, LLM-powered chat, and streaming overlays. The full web app was built and published in about 12 hours.
+
+Built with Claude Code. I made the architectural decisions and directed the implementation across Python, JavaScript, HTML, and CSS.
+
 ## Install
 
 ```bash
