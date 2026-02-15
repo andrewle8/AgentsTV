@@ -192,8 +192,9 @@ function toggleProviderFields() {
     document.getElementById('s-openai-fields').style.display = provider === 'openai' ? '' : 'none';
 }
 
-function syncLlmToggleUI() {
+function syncLlmToggleUI(cfg) {
     const btn = document.getElementById('llm-toggle-btn');
+    const label = document.getElementById('llm-model-label');
     const input = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
     if (!btn) return;
@@ -208,6 +209,25 @@ function syncLlmToggleUI() {
         if (input) { input.disabled = true; input.placeholder = 'LLM is off — enable in settings or toggle'; }
         if (sendBtn) sendBtn.disabled = true;
     }
+    // Show active model label
+    if (label) {
+        if (cfg) {
+            _updateModelLabel(label, cfg);
+        } else {
+            fetch('/api/settings').then(r => r.json()).then(c => _updateModelLabel(label, c)).catch(() => {});
+        }
+    }
+}
+
+function _updateModelLabel(label, cfg) {
+    if (cfg.provider === 'off') {
+        label.textContent = 'off';
+    } else if (cfg.provider === 'openai') {
+        label.textContent = cfg.openai_model || 'openai';
+    } else {
+        label.textContent = cfg.ollama_model || 'ollama';
+    }
+    label.title = 'Active LLM: ' + label.textContent;
 }
 
 async function saveSettings(e) {
@@ -241,9 +261,11 @@ async function saveSettings(e) {
             bufferSize: parseInt(document.getElementById('s-buffer-size').value, 10),
             overlayDuration: parseInt(document.getElementById('s-overlay-duration').value, 10),
         });
-        // Sync LLM toggle state
+        // Flush stale messages from old model and sync toggle state
+        viewerChatQueue.length = 0;
+        viewerChatFetching = false;
         state.llmEnabled = body.provider !== 'off';
-        syncLlmToggleUI();
+        syncLlmToggleUI(body);
         if (!state.llmEnabled) {
             stopNarratorChat();
         } else if (state.view === 'session' || state.view === 'master') {
@@ -284,10 +306,10 @@ async function saveSettings(e) {
             document.getElementById(id + '-val').textContent = document.getElementById(id).value + suffix;
         });
     }
-    // Fetch initial LLM state to set toggle
+    // Fetch initial LLM state to set toggle + model label
     fetch('/api/settings').then(r => r.json()).then(cfg => {
         state.llmEnabled = cfg.provider !== 'off';
-        syncLlmToggleUI();
+        syncLlmToggleUI(cfg);
     }).catch(() => {});
 })();
 
@@ -316,6 +338,8 @@ let _previousProvider = 'ollama';
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider: newProvider }),
             });
+            viewerChatQueue.length = 0;
+            viewerChatFetching = false;
             state.llmEnabled = !state.llmEnabled;
             syncLlmToggleUI();
             if (!state.llmEnabled) {
