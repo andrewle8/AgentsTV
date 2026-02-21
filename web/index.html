@@ -18,11 +18,21 @@
                     <span class="nav-item">Following</span>
                 </nav>
                 <span class="top-spacer"></span>
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle dark/light theme">🌙</button>
+                <button id="mute-btn" class="icon-btn" title="Mute sounds">🔊</button>
                 <button id="settings-btn" class="settings-btn" title="LLM Settings">⚙</button>
                 <span id="dash-status" class="conn-status"></span>
             </header>
             <div class="browse-header">
                 <h2>Live Channels <span id="channel-count" class="dim"></span></h2>
+                <div class="browse-controls">
+                    <input id="session-search" class="session-search" type="text" placeholder="Search projects, branches..." autocomplete="off">
+                    <select id="session-sort" class="session-sort">
+                        <option value="recent">Most Recent</option>
+                        <option value="events">Most Events</option>
+                        <option value="agents">Most Agents</option>
+                    </select>
+                </div>
             </div>
             <div id="session-grid" class="session-grid"></div>
             <div id="no-sessions" class="empty-state" style="display:none">
@@ -36,8 +46,11 @@
                 <button id="back-btn" class="back-btn" title="Back to browse">◂ Browse</button>
                 <span class="logo"><span class="logo-icon">▶</span> AgentsTV</span>
                 <span class="top-spacer"></span>
+                <span id="uptime-timer" class="uptime-timer"></span>
                 <span id="llm-model-label" class="llm-model-label"></span>
                 <button id="llm-toggle-btn" class="llm-toggle-btn" title="Toggle LLM on/off">&#x1F9E0;</button>
+                <button id="theme-toggle-btn-session" class="icon-btn" title="Toggle dark/light theme">🌙</button>
+                <button id="mute-btn-session" class="icon-btn" title="Mute sounds">🔊</button>
                 <button class="settings-btn" onclick="openSettings()" title="LLM Settings">⚙</button>
                 <span id="session-status" class="conn-status"></span>
             </header>
@@ -132,6 +145,7 @@
                     </div>
                     <div class="chat-actions">
                         <div class="chat-filters">
+                            <button id="export-chat-btn" class="filter-toggle-btn" title="Export chat log (E)">↓ Export</button>
                             <button id="filter-toggle-btn" class="filter-toggle-btn">⚙ Filters</button>
                             <div id="filters-panel" class="filters-dropdown" style="display:none"></div>
                         </div>
@@ -149,10 +163,19 @@
                 <form id="settings-form" class="settings-form">
                     <label class="settings-label">Provider</label>
                     <select id="s-provider" class="settings-input">
-                        <option value="ollama">Ollama</option>
-                        <option value="openai">OpenAI</option>
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="openai">OpenAI (cloud)</option>
+                        <option value="anthropic">Anthropic (cloud)</option>
                         <option value="off">Off (disabled)</option>
                     </select>
+
+                    <label class="settings-label">Hardware Profile</label>
+                    <select id="s-hw-profile" class="settings-input">
+                        <option value="desktop">Desktop GPU (12GB+ VRAM)</option>
+                        <option value="laptop">Laptop (8GB VRAM)</option>
+                        <option value="cloud">Cloud Only (no local GPU)</option>
+                    </select>
+                    <div class="settings-hint" id="s-hw-hint">Suggests models and buffer sizes for your hardware.</div>
 
                     <div id="s-ollama-fields">
                         <label class="settings-label">Ollama URL</label>
@@ -171,6 +194,18 @@
                         <label class="settings-label">OpenAI Model</label>
                         <input id="s-openai-model" class="settings-input" type="text" placeholder="gpt-4o-mini">
                     </div>
+
+                    <div id="s-anthropic-fields" style="display:none">
+                        <label class="settings-label">API Key</label>
+                        <input id="s-anthropic-key" class="settings-input" type="password" placeholder="sk-ant-…">
+                        <label class="settings-label">Anthropic Model</label>
+                        <input id="s-anthropic-model" class="settings-input" type="text" placeholder="claude-haiku-4-5-20241022">
+                    </div>
+
+                    <div class="settings-divider"></div>
+                    <label class="settings-label">Chat Username</label>
+                    <input id="s-viewer-name" class="settings-input" type="text" placeholder="your name in chat" maxlength="20">
+                    <div class="settings-hint">Shown in viewer chat instead of "you".</div>
 
                     <div class="settings-divider"></div>
                     <div class="settings-section-toggle" id="tuning-toggle">▸ Tuning</div>
@@ -216,6 +251,6 @@
             </div>
         </div>
     </div>
-    <script src="/static/app.js"></script>
+    <script type="module" src="/static/app.js"></script>
 </body>
 </html>

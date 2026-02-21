@@ -5,19 +5,36 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from .models import SessionSummary
 
 # File modified within this many seconds is considered active
 ACTIVE_THRESHOLD = 60
 
+# TTL cache for scan_sessions: (result, timestamp)
+_scan_cache: dict[str, Tuple[List[SessionSummary], float]] = {}
+_SCAN_TTL = 5.0  # seconds
+
 
 def scan_sessions(base_dir: Path | None = None) -> list[SessionSummary]:
-    """Find all JSONL transcripts and return lightweight summaries."""
+    """Find all JSONL transcripts and return lightweight summaries.
+
+    Results are cached with a 5-second TTL to avoid re-globbing on every
+    API request and WebSocket poll.
+    """
     if base_dir is None:
         base_dir = Path.home() / ".claude" / "projects"
     if not base_dir.is_dir():
         return []
+
+    cache_key = str(base_dir)
+    now = time.time()
+    cached = _scan_cache.get(cache_key)
+    if cached is not None:
+        result, cached_at = cached
+        if now - cached_at < _SCAN_TTL:
+            return result
 
     candidates = [c for c in base_dir.rglob("*.jsonl") if "subagents" not in str(c)]
     now = time.time()
@@ -104,4 +121,5 @@ def scan_sessions(base_dir: Path | None = None) -> list[SessionSummary]:
 
     # Sort by recency, active first
     summaries.sort(key=lambda s: (s.is_active, s.last_modified), reverse=True)
+    _scan_cache[cache_key] = (summaries, time.time())
     return summaries

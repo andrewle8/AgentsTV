@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Dict, Tuple
 
 from .models import Agent, Event, EventType, Session
+
+# Parse cache: keyed on (resolved_path, mtime) -> Session
+_parse_cache: Dict[Tuple[str, float], Session] = {}
+_PARSE_CACHE_MAX = 64
 
 # Agent colors assigned round-robin to sub-agents
 AGENT_COLORS = ["magenta", "yellow", "green", "red", "blue", "white"]
@@ -49,11 +54,34 @@ def auto_detect(file_path: str | Path) -> str:
 
 
 def parse(file_path: str | Path) -> Session:
-    """Auto-detect format and parse a transcript file."""
+    """Auto-detect format and parse a transcript file.
+
+    Results are cached by (resolved_path, mtime) so repeated calls for an
+    unchanged file skip all I/O and parsing.
+    """
+    p = Path(file_path).resolve()
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    key = (str(p), mtime)
+
+    cached = _parse_cache.get(key)
+    if cached is not None:
+        return cached
+
     fmt = auto_detect(file_path)
     if fmt == "claude_code":
-        return parse_claude_code(file_path)
-    return parse_codex(file_path)
+        session = parse_claude_code(file_path)
+    else:
+        session = parse_codex(file_path)
+
+    # Evict oldest entries if cache is full
+    if len(_parse_cache) >= _PARSE_CACHE_MAX:
+        oldest = next(iter(_parse_cache))
+        del _parse_cache[oldest]
+    _parse_cache[key] = session
+    return session
 
 
 def parse_codex(file_path: str | Path) -> Session:

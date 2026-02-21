@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hashlib
+import logging
 import os
 import re
 import sys
@@ -12,12 +14,14 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, llm
 from .parser import parse
 from .scanner import scan_sessions
+
+logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent.parent / "web"
 
@@ -32,6 +36,9 @@ PUBLIC_MODE = False
 
 # Map hashed file paths back to real paths (for public mode routing)
 _path_map: dict[str, str] = {}
+
+# Maximum length for user chat messages
+MAX_MESSAGE_LENGTH = 2000
 
 # Patterns that look like secrets
 _SECRET_PATTERNS = re.compile(
@@ -104,6 +111,44 @@ def _redact_summary(s: dict) -> dict:
         _path_map[hashed] = s['file_path']
         s['file_path'] = hashed
     return s
+
+
+def _resolve_session_path(session_id: str) -> Path | None:
+    """Resolve a session_id to a validated file path.
+
+    Returns the Path if it exists and is under DATA_DIR (when set),
+    or None if the session cannot be found or fails validation.
+    """
+    # Check public-mode hash map first
+    real_path = _path_map.get(session_id, session_id)
+    file_path = Path(real_path)
+
+    if not file_path.exists():
+        # Try finding by session ID in known locations
+        summaries = scan_sessions(DATA_DIR)
+        for s in summaries:
+            if s.id == session_id or s.file_path == session_id:
+                file_path = Path(s.file_path)
+                break
+
+    if not file_path.exists():
+        return None
+
+    # Path traversal guard: resolved path must be under DATA_DIR
+    if DATA_DIR is not None:
+        try:
+            resolved = file_path.resolve()
+            allowed = DATA_DIR.resolve()
+            if not str(resolved).startswith(str(allowed) + os.sep) and resolved != allowed:
+                logger.warning("Path traversal blocked: %s is not under %s", resolved, allowed)
+                return None
+        except (OSError, ValueError) as exc:
+            logger.warning("Path validation failed for %s: %s", file_path, exc)
+            return None
+
+    return file_path
+
+
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
@@ -136,21 +181,28 @@ async def post_chat(request: Request):
     if not user_message:
         return {"error": "Empty message"}
 
+    # Input validation
+    if len(user_message) > MAX_MESSAGE_LENGTH:
+        return JSONResponse(
+            {"error": f"Message too long (max {MAX_MESSAGE_LENGTH} characters)"},
+            status_code=400,
+        )
+
+    if reply_to_index is not None:
+        if not isinstance(reply_to_index, int):
+            return JSONResponse(
+                {"error": "reply_to_event_index must be an integer"},
+                status_code=400,
+            )
+
     # Load session for context
     event_content = ""
     event_type = ""
     context = ""
     if session_id:
         try:
-            real_path = _path_map.get(session_id, session_id)
-            file_path = Path(real_path)
-            if not file_path.exists():
-                summaries = scan_sessions(DATA_DIR)
-                for s in summaries:
-                    if s.id == session_id or s.file_path == session_id:
-                        file_path = Path(s.file_path)
-                        break
-            if file_path.exists():
+            file_path = _resolve_session_path(session_id)
+            if file_path:
                 session = parse(file_path)
                 session_data = _redact_session(session.to_dict())
                 context = _build_context(session_data, n=8)
@@ -161,7 +213,7 @@ async def post_chat(request: Request):
                     event_content = target.get("content", "")
                     event_type = target.get("type", "")
         except Exception:
-            pass
+            logger.exception("Failed to load session %s for chat context", session_id)
 
     reply = await llm.generate_interactive_reply(
         user_message, event_content, event_type, context
@@ -190,6 +242,9 @@ async def put_settings(request: Request):
         ollama_model=body.get("ollama_model"),
         openai_key=body.get("openai_key"),
         openai_model=body.get("openai_model"),
+        anthropic_key=body.get("anthropic_key"),
+        anthropic_model=body.get("anthropic_model"),
+        low_power=body.get("low_power"),
     )
     _chat_buffers.clear()
     _narrator_buffers.clear()
@@ -205,17 +260,8 @@ async def list_sessions():
 @app.get("/api/session/{session_id:path}")
 async def get_session(session_id: str):
     """Parse and return a full session by file path (base64 or direct)."""
-    # Resolve hashed path in public mode
-    real_path = _path_map.get(session_id, session_id)
-    file_path = Path(real_path)
-    if not file_path.exists():
-        # Try finding by session ID in known locations
-        summaries = scan_sessions(DATA_DIR)
-        for s in summaries:
-            if s.id == session_id or s.file_path == session_id:
-                file_path = Path(s.file_path)
-                break
-    if not file_path.exists():
+    file_path = _resolve_session_path(session_id)
+    if not file_path:
         return {"error": "Session not found"}
     session = parse(file_path)
     return _redact_session(session.to_dict())
@@ -274,63 +320,76 @@ def _build_context(session_data: dict, n: int = 5) -> str:
     return f"{random.choice(names)} is working on a project."
 
 
+def _is_session_active(session_id: str) -> bool:
+    """Check if a session is currently active (recently modified)."""
+    if session_id == "__master__":
+        return True
+    summaries = scan_sessions(DATA_DIR)
+    for s in summaries:
+        if s.id == session_id or s.file_path == session_id:
+            return s.is_active
+    return False
+
+
 @app.get("/api/viewer-chat/{session_id:path}")
 async def viewer_chat(session_id: str):
     """Return a generated viewer chat message for the session."""
     import random
 
+    # Skip LLM for inactive sessions — return empty so client uses fallback
+    if not _is_session_active(session_id):
+        return {"name": "", "message": ""}
+
+    # Phase 1: Check buffer under lock
     async with _chat_lock:
         buf = _chat_buffers.get(session_id, [])
-
-        llm_error = ""
-
-        if not buf:
-            # Try to generate a batch from LLM
-            try:
-                context = None
-                if session_id == "__master__":
-                    # Build context from aggregated master events
-                    master_data = await get_master()
-                    context = _build_context(master_data, n=10)
-                else:
-                    real_path = _path_map.get(session_id, session_id)
-                    file_path = Path(real_path)
-                    if not file_path.exists():
-                        summaries = scan_sessions(DATA_DIR)
-                        for s in summaries:
-                            if s.id == session_id or s.file_path == session_id:
-                                file_path = Path(s.file_path)
-                                break
-
-                    if file_path.exists():
-                        session = parse(file_path)
-                        context = _build_context(
-                            _redact_session(session.to_dict())
-                        )
-
-                if context:
-                    messages, llm_error = await llm.generate_viewer_messages(
-                        context, count=10
-                    )
-                    if messages:
-                        buf = [
-                            {
-                                "name": random.choice(VIEWER_NAMES),
-                                "message": msg,
-                            }
-                            for msg in messages
-                        ]
-                        _chat_buffers[session_id] = buf
-            except Exception:
-                pass
-
         if buf:
             item = buf.pop(0)
             _chat_buffers[session_id] = buf
             return item
 
+    # Phase 2: Generate new messages outside the lock (LLM call is slow)
+    llm_error = ""
+    buf = []
+    count = 5 if llm.LOW_POWER else 10
+    try:
+        context = None
+        if session_id == "__master__":
+            master_data = await get_master()
+            context = _build_context(master_data, n=10)
+        else:
+            file_path = _resolve_session_path(session_id)
+            if file_path:
+                session = parse(file_path)
+                context = _build_context(
+                    _redact_session(session.to_dict())
+                )
+
+        if context:
+            messages, llm_error = await llm.generate_viewer_messages(
+                context, count=count
+            )
+            if messages:
+                buf = [
+                    {
+                        "name": random.choice(VIEWER_NAMES),
+                        "message": msg,
+                    }
+                    for msg in messages
+                ]
+    except Exception:
+        logger.exception("Failed to generate viewer chat for session %s", session_id)
+
+    # Phase 3: Store results and pop one item under lock
+    if buf:
+        async with _chat_lock:
+            _chat_buffers[session_id] = buf
+            item = buf.pop(0)
+            _chat_buffers[session_id] = buf
+            return item
+
     # Fallback — empty means client should use hardcoded messages
-    resp = {"name": "", "message": ""}
+    resp: dict = {"name": "", "message": ""}
     if llm_error:
         resp["llm_error"] = llm_error
     return resp
@@ -346,6 +405,12 @@ async def viewer_react(request: Request):
     if not user_message:
         return {"reactions": []}
 
+    if len(user_message) > MAX_MESSAGE_LENGTH:
+        return JSONResponse(
+            {"error": f"Message too long (max {MAX_MESSAGE_LENGTH} characters)"},
+            status_code=400,
+        )
+
     messages = await llm.generate_viewer_reaction(user_message)
     reactions = [
         {"name": random.choice(VIEWER_NAMES), "message": msg}
@@ -357,33 +422,37 @@ async def viewer_react(request: Request):
 @app.get("/api/narrator/{session_id:path}")
 async def narrator_chat(session_id: str):
     """Return a generated narrator commentary message for the session."""
+    # Skip LLM for inactive sessions
+    if not _is_session_active(session_id):
+        return {"message": ""}
+
+    # Phase 1: Check buffer under lock
     async with _narrator_lock:
         buf = _narrator_buffers.get(session_id, [])
-
-        if not buf:
-            try:
-                real_path = _path_map.get(session_id, session_id)
-                file_path = Path(real_path)
-                if not file_path.exists():
-                    summaries = scan_sessions(DATA_DIR)
-                    for s in summaries:
-                        if s.id == session_id or s.file_path == session_id:
-                            file_path = Path(s.file_path)
-                            break
-
-                if file_path.exists():
-                    session = parse(file_path)
-                    context = _build_context(
-                        _redact_session(session.to_dict()), n=10
-                    )
-                    messages = await llm.generate_narrator_messages(context, count=3)
-                    if messages:
-                        buf = list(messages)
-                        _narrator_buffers[session_id] = buf
-            except Exception:
-                pass
-
         if buf:
+            item = buf.pop(0)
+            _narrator_buffers[session_id] = buf
+            return {"message": item}
+
+    # Phase 2: Generate new messages outside the lock (LLM call is slow)
+    buf = []
+    try:
+        file_path = _resolve_session_path(session_id)
+        if file_path:
+            session = parse(file_path)
+            context = _build_context(
+                _redact_session(session.to_dict()), n=10
+            )
+            messages = await llm.generate_narrator_messages(context, count=3)
+            if messages:
+                buf = list(messages)
+    except Exception:
+        logger.exception("Failed to generate narrator message for session %s", session_id)
+
+    # Phase 3: Store results and pop one item under lock
+    if buf:
+        async with _narrator_lock:
+            _narrator_buffers[session_id] = buf
             item = buf.pop(0)
             _narrator_buffers[session_id] = buf
             return {"message": item}
@@ -396,16 +465,8 @@ async def ws_session(websocket: WebSocket, session_id: str):
     """Live updates for a single session — polls file every 2s, sends deltas."""
     await websocket.accept()
 
-    # Resolve file path (check public mode hash map)
-    real_path = _path_map.get(session_id, session_id)
-    file_path = Path(real_path)
-    if not file_path.exists():
-        summaries = scan_sessions(DATA_DIR)
-        for s in summaries:
-            if s.id == session_id or s.file_path == session_id:
-                file_path = Path(s.file_path)
-                break
-    if not file_path.exists():
+    file_path = _resolve_session_path(session_id)
+    if not file_path:
         await websocket.send_json({"error": "Session not found"})
         await websocket.close()
         return
@@ -438,7 +499,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        logger.exception("WebSocket error for session %s", session_id)
 
 
 @app.get("/api/master")
@@ -478,6 +539,7 @@ async def get_master():
                 ad["name"] = f"{proj}/{agent.name}"
                 all_agents[key] = ad
         except Exception:
+            logger.exception("Failed to parse session for project %s", proj)
             continue
 
     # Sort by timestamp, keep last 2000
@@ -532,6 +594,7 @@ async def ws_master(websocket: WebSocket):
                         ad["name"] = f"{proj}/{agent.name}"
                         all_agents[key] = ad
                 except Exception:
+                    logger.exception("Failed to parse active session %s", s.file_path)
                     continue
 
             if new_events:
@@ -547,7 +610,7 @@ async def ws_master(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        logger.exception("WebSocket error in master channel")
 
 
 @app.websocket("/ws/dashboard")
@@ -565,7 +628,7 @@ async def ws_dashboard(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        logger.exception("WebSocket error in dashboard")
 
 
 def _file_hash(path: Path) -> str:
@@ -577,6 +640,27 @@ def _file_hash(path: Path) -> str:
         return ""
 
 
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="agent-replay",
+        description="Launch the agent-replay web dashboard.",
+    )
+    parser.add_argument("--port", type=int, default=8420, help="Port to listen on (default: 8420)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
+    parser.add_argument("--public", action="store_true", help="Redact secrets, API keys, and full paths")
+    parser.add_argument("--llm", dest="llm_provider", help="LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
+    parser.add_argument("--ollama-url", help="Ollama server URL (default: http://localhost:11434)")
+    parser.add_argument("--ollama-model", help="Ollama model name (no default — choose in UI)")
+    parser.add_argument("--openai-key", help="OpenAI API key (env: AGENTSTV_OPENAI_KEY)")
+    parser.add_argument("--openai-model", help="OpenAI model name (default: gpt-4o-mini)")
+    parser.add_argument("--anthropic-key", help="Anthropic API key (env: AGENTSTV_ANTHROPIC_KEY)")
+    parser.add_argument("--anthropic-model", help="Anthropic model name (default: claude-haiku-4-5-20241022)")
+    parser.add_argument("--low-power", action="store_true", help="Low-power mode: smaller batches, longer intervals")
+    return parser
+
+
 def main(args: list[str] | None = None) -> None:
     """CLI entry point — launch uvicorn and open browser."""
     import uvicorn
@@ -586,67 +670,21 @@ def main(args: list[str] | None = None) -> None:
 
     global PUBLIC_MODE
 
-    port = 8420
-    host = "0.0.0.0"
-    no_browser = False
-    llm_provider = None
-    ollama_url = None
-    ollama_model = None
-    openai_key = None
-    openai_model = None
+    parsed = _build_arg_parser().parse_args(args)
 
-    i = 0
-    while i < len(args):
-        if args[i] == "--port" and i + 1 < len(args):
-            port = int(args[i + 1])
-            i += 2
-        elif args[i] == "--host" and i + 1 < len(args):
-            host = args[i + 1]
-            i += 2
-        elif args[i] == "--no-browser":
-            no_browser = True
-            i += 1
-        elif args[i] == "--public":
-            PUBLIC_MODE = True
-            i += 1
-        elif args[i] == "--llm" and i + 1 < len(args):
-            llm_provider = args[i + 1]
-            i += 2
-        elif args[i] == "--ollama-url" and i + 1 < len(args):
-            ollama_url = args[i + 1]
-            i += 2
-        elif args[i] == "--ollama-model" and i + 1 < len(args):
-            ollama_model = args[i + 1]
-            i += 2
-        elif args[i] == "--openai-key" and i + 1 < len(args):
-            openai_key = args[i + 1]
-            i += 2
-        elif args[i] == "--openai-model" and i + 1 < len(args):
-            openai_model = args[i + 1]
-            i += 2
-        elif args[i] in ("-h", "--help"):
-            print("Usage: agent-replay [OPTIONS]")
-            print("\nLaunch the agent-replay web dashboard.")
-            print("\nOptions:")
-            print(f"  --port PORT        Port to listen on (default: {port})")
-            print(f"  --host HOST        Host to bind to (default: {host})")
-            print("  --no-browser       Don't auto-open browser")
-            print("  --public           Redact secrets, API keys, and full paths")
-            print("  --llm PROVIDER     LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
-            print("  --ollama-url URL   Ollama server URL (default: http://localhost:11434)")
-            print("  --ollama-model M   Ollama model name (no default — choose in UI)")
-            print("  --openai-key KEY   OpenAI API key (env: AGENTSTV_OPENAI_KEY)")
-            print("  --openai-model M   OpenAI model name (default: gpt-4o-mini)")
-            sys.exit(0)
-        else:
-            i += 1
+    port = parsed.port
+    host = parsed.host
+    PUBLIC_MODE = parsed.public
 
     llm.configure(
-        provider=llm_provider,
-        ollama_url=ollama_url,
-        ollama_model=ollama_model,
-        openai_key=openai_key,
-        openai_model=openai_model,
+        provider=parsed.llm_provider,
+        ollama_url=parsed.ollama_url,
+        ollama_model=parsed.ollama_model,
+        openai_key=parsed.openai_key,
+        openai_model=parsed.openai_model,
+        anthropic_key=parsed.anthropic_key,
+        anthropic_model=parsed.anthropic_model,
+        low_power=parsed.low_power or None,
     )
 
     # Check if port is already in use before starting
@@ -666,10 +704,16 @@ def main(args: list[str] | None = None) -> None:
     print(f"agent-replay v{__version__} — starting at {url}{mode}")
 
     # LLM health check
+    if llm.LOW_POWER:
+        print("  Low-power mode: ON (reduced batch sizes)")
     if llm.LLM_PROVIDER == "off":
         pass  # user chose off explicitly
     elif not llm.is_ready():
         print("  LLM: no model configured — choose one in the web UI settings")
+    elif llm.LLM_PROVIDER == "anthropic":
+        print(f"  LLM: {llm.ANTHROPIC_MODEL} via Anthropic (cloud)")
+    elif llm.LLM_PROVIDER == "openai":
+        print(f"  LLM: {llm.OPENAI_MODEL} via OpenAI (cloud)")
     else:
         try:
             import httpx as _hx
@@ -682,7 +726,7 @@ def main(args: list[str] | None = None) -> None:
         except Exception:
             print(f"  LLM: cannot reach Ollama at {llm.OLLAMA_URL} — viewer chat will use fallback messages")
 
-    if not no_browser:
+    if not parsed.no_browser:
         # Open browser after a short delay to let server start
         import threading
         threading.Timer(1.0, lambda: webbrowser.open(browser_url)).start()

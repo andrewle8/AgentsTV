@@ -11,6 +11,32 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+# Persistent HTTP clients — lazily initialized, reused across calls
+_ollama_client: httpx.AsyncClient | None = None
+_openai_client: httpx.AsyncClient | None = None
+_anthropic_client: httpx.AsyncClient | None = None
+
+
+def _get_ollama_client() -> httpx.AsyncClient:
+    global _ollama_client
+    if _ollama_client is None or _ollama_client.is_closed:
+        _ollama_client = httpx.AsyncClient(timeout=60.0)
+    return _ollama_client
+
+
+def _get_openai_client() -> httpx.AsyncClient:
+    global _openai_client
+    if _openai_client is None or _openai_client.is_closed:
+        _openai_client = httpx.AsyncClient(timeout=30.0)
+    return _openai_client
+
+
+def _get_anthropic_client() -> httpx.AsyncClient:
+    global _anthropic_client
+    if _anthropic_client is None or _anthropic_client.is_closed:
+        _anthropic_client = httpx.AsyncClient(timeout=30.0)
+    return _anthropic_client
+
 # Appended to Ollama user prompts to disable internal reasoning (Qwen3, Cogito).
 # Kept off for generate_interactive_reply where thinking improves quality.
 _NO_THINK = " /no_think"
@@ -70,9 +96,14 @@ SYSTEM_PROMPT_REACT = (
 # Provider config — set via env vars or CLI flags
 LLM_PROVIDER: str = os.environ.get("AGENTSTV_LLM", "ollama")
 OLLAMA_URL: str = os.environ.get("AGENTSTV_OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "phi4:14b")
+OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "")
 OPENAI_KEY: str = os.environ.get("AGENTSTV_OPENAI_KEY", "")
 OPENAI_MODEL: str = os.environ.get("AGENTSTV_OPENAI_MODEL", "gpt-4o-mini")
+ANTHROPIC_KEY: str = os.environ.get("AGENTSTV_ANTHROPIC_KEY", "")
+ANTHROPIC_MODEL: str = os.environ.get("AGENTSTV_ANTHROPIC_MODEL", "claude-haiku-4-5-20241022")
+
+# Low-power mode — reduces batch sizes and adds delays between calls
+LOW_POWER: bool = os.environ.get("AGENTSTV_LOW_POWER", "").lower() in ("1", "true", "yes")
 
 
 def configure(
@@ -81,9 +112,13 @@ def configure(
     ollama_model: str | None = None,
     openai_key: str | None = None,
     openai_model: str | None = None,
+    anthropic_key: str | None = None,
+    anthropic_model: str | None = None,
+    low_power: bool | None = None,
 ) -> None:
     """Override LLM settings (called from CLI arg parsing)."""
     global LLM_PROVIDER, OLLAMA_URL, OLLAMA_MODEL, OPENAI_KEY, OPENAI_MODEL
+    global ANTHROPIC_KEY, ANTHROPIC_MODEL, LOW_POWER
     if provider is not None:
         LLM_PROVIDER = provider
     if ollama_url is not None:
@@ -94,6 +129,12 @@ def configure(
         OPENAI_KEY = openai_key
     if openai_model is not None:
         OPENAI_MODEL = openai_model
+    if anthropic_key is not None:
+        ANTHROPIC_KEY = anthropic_key
+    if anthropic_model is not None:
+        ANTHROPIC_MODEL = anthropic_model
+    if low_power is not None:
+        LOW_POWER = low_power
 
 
 def is_ready() -> bool:
@@ -102,20 +143,28 @@ def is_ready() -> bool:
         return False
     if LLM_PROVIDER == "openai":
         return bool(OPENAI_KEY and OPENAI_MODEL)
+    if LLM_PROVIDER == "anthropic":
+        return bool(ANTHROPIC_KEY and ANTHROPIC_MODEL)
     return bool(OLLAMA_MODEL)
 
 
 def get_settings() -> dict:
-    """Return current LLM configuration (OpenAI key is masked)."""
-    masked_key = ""
+    """Return current LLM configuration (API keys are masked)."""
+    masked_openai = ""
     if OPENAI_KEY:
-        masked_key = OPENAI_KEY[:3] + "…" + OPENAI_KEY[-4:] if len(OPENAI_KEY) > 8 else "••••"
+        masked_openai = OPENAI_KEY[:3] + "…" + OPENAI_KEY[-4:] if len(OPENAI_KEY) > 8 else "••••"
+    masked_anthropic = ""
+    if ANTHROPIC_KEY:
+        masked_anthropic = ANTHROPIC_KEY[:3] + "…" + ANTHROPIC_KEY[-4:] if len(ANTHROPIC_KEY) > 8 else "••••"
     return {
         "provider": LLM_PROVIDER,
         "ollama_url": OLLAMA_URL,
         "ollama_model": OLLAMA_MODEL,
-        "openai_key": masked_key,
+        "openai_key": masked_openai,
         "openai_model": OPENAI_MODEL,
+        "anthropic_key": masked_anthropic,
+        "anthropic_model": ANTHROPIC_MODEL,
+        "low_power": LOW_POWER,
     }
 
 
@@ -129,6 +178,9 @@ async def generate_viewer_messages(
     if not is_ready():
         return [], ""
 
+    if LOW_POWER:
+        count = min(count, 3)
+
     name = _random_streamer()
     user_prompt = (
         f"Here are the last few things {name} did:\n{context}\n\n"
@@ -137,10 +189,7 @@ async def generate_viewer_messages(
     system = _system_prompt()
 
     try:
-        if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, system, count=count), ""
-        else:
-            return await _call_ollama(user_prompt + _NO_THINK, system, count=count), ""
+        return await _dispatch(user_prompt, system, count=count), ""
     except Exception as exc:
         err = str(exc) or type(exc).__name__
         log.warning("LLM viewer-chat call failed: %s", err)
@@ -169,10 +218,7 @@ async def generate_interactive_reply(
         user_prompt += f"Recent agent activity for context:\n{context}\n"
 
     try:
-        if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
-        else:
-            return await _call_ollama(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
+        return await _dispatch(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
     except Exception as exc:
         log.warning("Interactive LLM call failed: %s", str(exc) or type(exc).__name__)
         return ""
@@ -186,6 +232,9 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
     if not is_ready():
         return []
 
+    if LOW_POWER:
+        count = min(count, 1)
+
     name = _random_streamer()
     user_prompt = (
         f"Here is what {name} just did:\n{context}\n\n"
@@ -193,10 +242,7 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
     )
 
     try:
-        if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
-        else:
-            return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_NARRATOR, count=count)
+        return await _dispatch(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
     except Exception as exc:
         log.warning("Narrator LLM call failed: %s", str(exc) or type(exc).__name__)
         return []
@@ -216,13 +262,58 @@ async def generate_viewer_reaction(user_message: str) -> list[str]:
     )
 
     try:
-        if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, SYSTEM_PROMPT_REACT, count=2)
-        else:
-            return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_REACT, count=2)
+        return await _dispatch(user_prompt, SYSTEM_PROMPT_REACT, count=2)
     except Exception as exc:
         log.warning("Viewer reaction LLM call failed: %s", str(exc) or type(exc).__name__)
         return []
+
+
+async def _dispatch(
+    user_prompt: str,
+    system_prompt: str = "",
+    *,
+    count: int = 5,
+    raw: bool = False,
+) -> list[str] | str:
+    """Route to the configured LLM provider."""
+    if LLM_PROVIDER == "anthropic":
+        return await _call_anthropic(user_prompt, system_prompt, count=count, raw=raw)
+    if LLM_PROVIDER == "openai":
+        return await _call_openai(user_prompt, system_prompt, count=count, raw=raw)
+    # Default: ollama — append /no_think unless raw (interactive reply benefits from thinking)
+    prompt = user_prompt if raw else user_prompt + _NO_THINK
+    return await _call_ollama(prompt, system_prompt, count=count, raw=raw)
+
+
+async def _call_anthropic(
+    user_prompt: str,
+    system_prompt: str = "",
+    *,
+    count: int = 5,
+    raw: bool = False,
+) -> list[str] | str:
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    payload = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 500 if raw else 300,
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    client = _get_anthropic_client()
+    resp = await client.post(url, json=payload, headers=headers)
+    resp.raise_for_status()
+    body = resp.json()
+    text = body["content"][0]["text"]
+    if raw:
+        return text.strip()
+    return _parse_response(text, count)
 
 
 async def _call_ollama(
@@ -243,10 +334,10 @@ async def _call_ollama(
     }
     if not raw:
         payload["format"] = "json"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(url, json=payload)
-        resp.raise_for_status()
-        body = resp.json()
+    client = _get_ollama_client()
+    resp = await client.post(url, json=payload)
+    resp.raise_for_status()
+    body = resp.json()
     text = body["message"]["content"]
     if raw:
         return text.strip()
@@ -271,10 +362,10 @@ async def _call_openai(
         "temperature": 1.0,
         "max_tokens": 300 if not raw else 500,
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        body = resp.json()
+    client = _get_openai_client()
+    resp = await client.post(url, json=payload, headers=headers)
+    resp.raise_for_status()
+    body = resp.json()
     text = body["choices"][0]["message"]["content"]
     if raw:
         return text.strip()
