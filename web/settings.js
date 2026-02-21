@@ -225,6 +225,8 @@ function initLlmToggle() {
 
 export function initSettings() {
     document.getElementById('settings-btn').addEventListener('click', openSettings);
+    const sessionSettingsBtn = document.getElementById('settings-btn-session');
+    if (sessionSettingsBtn) sessionSettingsBtn.addEventListener('click', openSettings);
     document.getElementById('settings-close-btn').addEventListener('click', closeSettings);
     document.getElementById('settings-overlay').addEventListener('click', function(e) {
         if (e.target === this) closeSettings();
@@ -257,5 +259,3 @@ export function initSettings() {
     initChatInput();
 }
 
-// Make openSettings available globally for the inline onclick in HTML
-window.openSettings = openSettings;
