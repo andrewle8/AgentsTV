@@ -29,6 +29,7 @@ agent-replay --port 8420          # Custom port (default: 8420)
 agent-replay --host 0.0.0.0      # Bind to all interfaces (default, enables LAN access)
 agent-replay --no-browser         # Don't auto-open browser
 agent-replay --public             # Redact secrets for public sharing
+agent-replay --low-power          # Reduce LLM batch sizes for laptops
 ```
 
 The dashboard auto-discovers Claude Code session logs from `~/.claude/projects/`. Override with `AGENTSTV_DATA_DIR=/path/to/logs`.
@@ -63,11 +64,11 @@ When agent events occur, a code preview panel appears in the top-right corner sh
 
 ### Chat Sidebar
 
-A dual-pane chat layout splits the sidebar into **Viewer Chat** (LLM-generated reactions) and **Agent Log** (real agent events). The divider is draggable. Every agent action (file edits, bash commands, tool calls, etc.) appears as a chat message with type-specific badges and colored names. Click any message to expand and see the full content. Click "Ask about this" to ask the LLM about a specific event.
+A dual-pane chat layout splits the sidebar into **Viewer Chat** (LLM-generated reactions) and **Agent Log** (real agent events). The divider is draggable. Every agent action (file edits, bash commands, tool calls, etc.) appears as a chat message with type-specific badges and colored names. Click any message to expand and see the full content. Click "Ask about this" to ask the LLM about a specific event. Chat logs can be exported as .txt files via the export button or `E` shortcut.
 
 ### LLM Integration
 
-AgentsTV optionally uses a local or cloud LLM to generate dynamic content. All LLM features can be toggled on/off with the brain icon in the top bar. When LLM is off, viewer chat falls back to hardcoded messages and the narrator stops.
+AgentsTV optionally uses a local or cloud LLM to generate dynamic content. Supports Ollama (local), OpenAI, and Anthropic Claude as providers. All LLM features can be toggled on/off with the brain icon in the top bar. When LLM is off, viewer chat falls back to hardcoded messages and the narrator stops. Inactive sessions automatically skip LLM calls and use fallback messages only.
 
 #### Viewer Chat
 
@@ -100,13 +101,19 @@ agent-replay --llm ollama --ollama-model qwen3:14b
 # OpenAI
 agent-replay --llm openai --openai-key sk-... --openai-model gpt-4o-mini
 
+# Anthropic Claude (cloud)
+agent-replay --llm anthropic --anthropic-key sk-ant-...
+
+# Low-power mode for laptops (smaller batches, less frequent LLM calls)
+agent-replay --low-power
+
 # Disable LLM entirely
 agent-replay --llm off
 ```
 
-Or set environment variables: `AGENTSTV_LLM`, `AGENTSTV_OLLAMA_URL`, `AGENTSTV_OLLAMA_MODEL`, `AGENTSTV_OPENAI_KEY`, `AGENTSTV_OPENAI_MODEL`.
+Or set environment variables: `AGENTSTV_LLM`, `AGENTSTV_OLLAMA_URL`, `AGENTSTV_OLLAMA_MODEL`, `AGENTSTV_OPENAI_KEY`, `AGENTSTV_OPENAI_MODEL`, `AGENTSTV_ANTHROPIC_KEY`, `AGENTSTV_ANTHROPIC_MODEL`.
 
-The settings panel (gear icon) also lets you switch providers, pick from locally available Ollama models, and enter OpenAI keys at runtime.
+The settings panel (gear icon) lets you switch providers, pick from locally available Ollama models, enter API keys, and select a hardware profile (Desktop GPU / Laptop / Cloud Only) that auto-suggests appropriate models and buffer sizes.
 
 #### Tuning
 
@@ -118,12 +125,32 @@ The settings panel includes a collapsible "Tuning" section to adjust frontend be
 | Narrator Frequency | 5-120s | 20s | How often caster_bot narrates |
 | Tip Chance | 0-50% | 15% | Chance of a viewer tip per message cycle |
 | Reaction Chance | 0-100% | 50% | Chance viewers react to your chat messages |
-| Chat Buffer Size | 3-25 | 10 | How many LLM messages to pre-fetch |
+| Chat Buffer Size | 3-25 | 5 | How many LLM messages to pre-fetch |
 | Code Overlay Duration | 5-60s | 15s | How long the code overlay stays visible |
 
 ### Master Control Room
 
 Aggregates all active sessions into a single view with a dynamic wall of monitors that scales with active project count (2x1 for 1-2 projects up to 4x3 for 10-12), status LEDs, ceiling alert light on errors, a console desk with keyboard typing animation, a blinking server rack, a wall clock, and a manager character scanning monitors from a comfy chair.
+
+### Sound Effects
+
+Audio cues for agent events using Web Audio API: keystrokes during file edits, error buzzer, completion chime, chat message pop, spawn whoosh. Mute/unmute via the speaker button in the top bar. Preference persists in localStorage.
+
+### Keyboard Shortcuts
+
+Press `?` to show a shortcut overlay. Available shortcuts: `Esc` (back/close), `M` (mute/unmute), `F` (fullscreen chat), `Space` (pause auto-scroll), `T` (toggle theme), `E` (export chat), `S` (split chat).
+
+### Dark / Light Theme
+
+Toggle between dark and light themes via the sun/moon button in the top bar. Uses CSS variables for full-page theming. Preference persists in localStorage.
+
+### Stream Alerts
+
+Overlay toast notifications for key events: errors, task completions, agent spawns, file creates. Slide in from the top-right, stack up to 3, and auto-dismiss after 4 seconds.
+
+### Dashboard Search and Sort
+
+Search bar filters sessions by project name, branch, or slug. Sort dropdown orders by most recent, most events, or most agents.
 
 ### Public Streaming
 
@@ -150,16 +177,29 @@ agent_replay/
   __init__.py  # Version string
   __main__.py  # python -m agent_replay entrypoint
   server.py    # FastAPI server, WebSocket live updates, REST API, --public redaction
-  parser.py    # JSONL parsing -> normalized event stream
+  parser.py    # JSONL parsing -> normalized event stream (cached with mtime invalidation)
   models.py    # Event, Agent, Session, SessionSummary dataclasses
-  scanner.py   # Session discovery — scans ~/.claude/projects/
-  llm.py       # LLM provider abstraction (Ollama/OpenAI), viewer/narrator/interactive chat
+  scanner.py   # Session discovery — scans ~/.claude/projects/ (cached with 5s TTL)
+  llm.py       # LLM providers (Ollama/OpenAI/Anthropic), viewer/narrator/interactive chat
 
 web/
-  index.html   # Dashboard + session view layout
-  app.js       # Pixel art engine, chat rendering, WebSocket client, LLM UI
-  style.css    # Twitch-inspired dark theme
-  favicon.svg  # Browser tab icon
+  index.html      # Dashboard + session view layout
+  style.css       # Twitch-inspired dark/light theme
+  favicon.svg     # Browser tab icon
+  app.js          # Entry point — imports and initializes all modules
+  state.js        # Global state, constants, tuning, event bus
+  utils.js        # Shared utilities (HTML escaping, formatting)
+  pixelEngine.js  # Pixel art rendering, character, decorations, reactions
+  chat.js         # Chat rendering, viewer chat queue, narrator, interactive input
+  dashboard.js    # Dashboard view, session grid, search/filter/sort
+  session.js      # Session stream view, code overlay, uptime timer
+  master.js       # Master control room, multi-monitor layout
+  settings.js     # Settings modal, LLM toggle, tuning controls
+  router.js       # URL hash routing, view transitions
+  sound.js        # Sound effects via Web Audio API
+  shortcuts.js    # Keyboard shortcut overlay and handlers
+  alerts.js       # Stream alert toast notifications
+  theme.js        # Dark/light theme toggle
 ```
 
 ### API Endpoints
