@@ -134,7 +134,7 @@ def configure(
     if anthropic_model is not None:
         ANTHROPIC_MODEL = anthropic_model
     if low_power is not None:
-        LOW_POWER = low_power
+        LOW_POWER = bool(low_power)
 
 
 def is_ready() -> bool:

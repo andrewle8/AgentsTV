@@ -130,6 +130,7 @@ class SessionSummary:
     total_cache_tokens: int = 0
     slug: str = ""
     branch: str = ""
+    source: str = "claude"
 
     def to_dict(self) -> dict:
         return {
@@ -145,4 +146,5 @@ class SessionSummary:
             "total_cache_tokens": self.total_cache_tokens,
             "slug": self.slug,
             "branch": self.branch,
+            "source": self.source,
         }

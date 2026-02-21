@@ -1,4 +1,4 @@
-"""JSONL parsing for Claude Code (and future Codex CLI) transcripts."""
+"""JSONL parsing for Claude Code, Codex CLI, and Gemini CLI transcripts."""
 
 from __future__ import annotations
 
@@ -30,7 +30,26 @@ TOOL_TYPE_MAP = {
 
 
 def auto_detect(file_path: str | Path) -> str:
-    """Detect transcript format. Returns 'claude_code' or 'codex'."""
+    """Detect transcript format.
+
+    Returns 'claude_code', 'codex', or 'gemini'.
+    """
+    file_path = Path(file_path)
+
+    # Gemini CLI stores sessions as JSON (not JSONL) in ~/.gemini/
+    if file_path.suffix == ".json":
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "messages" in data:
+                return "gemini"
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                first = data[0]
+                if first.get("role") in ("user", "model"):
+                    return "gemini"
+        except (json.JSONDecodeError, OSError):
+            pass
+
     with open(file_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -49,6 +68,22 @@ def auto_detect(file_path: str | Path) -> str:
                 "progress",
             ):
                 return "claude_code"
+            # Codex CLI rollout files have these record types
+            if rec.get("type") in ("session_meta", "response_item", "event_msg"):
+                return "codex"
+            # Codex legacy: type=message with role field
+            if rec.get("type") == "message" and "role" in rec:
+                return "codex"
+            # Gemini JSONL format
+            if rec.get("type") in ("session_metadata",):
+                return "gemini"
+            if rec.get("type") in ("user", "gemini") and "content" in rec:
+                # Gemini uses type="user"/"gemini"; Claude uses type="user" with sessionId
+                if "sessionId" not in rec:
+                    return "gemini"
+            # Codex turn_context events
+            if rec.get("type") == "turn_context":
+                return "codex"
     return "codex"
 
 
@@ -72,10 +107,16 @@ def parse(file_path: str | Path) -> Session:
     fmt = auto_detect(file_path)
     if fmt == "claude_code":
         session = parse_claude_code(file_path)
+    elif fmt == "gemini":
+        session = parse_gemini(file_path)
     else:
         session = parse_codex(file_path)
 
-    # Evict oldest entries if cache is full
+    # Evict stale entries for the same path (old mtimes)
+    stale_keys = [k for k in _parse_cache if k[0] == str(p) and k[1] != mtime]
+    for sk in stale_keys:
+        del _parse_cache[sk]
+    # Evict oldest entry if cache is still full
     if len(_parse_cache) >= _PARSE_CACHE_MAX:
         oldest = next(iter(_parse_cache))
         del _parse_cache[oldest]
@@ -84,8 +125,344 @@ def parse(file_path: str | Path) -> Session:
 
 
 def parse_codex(file_path: str | Path) -> Session:
-    """Stub for Codex CLI transcript parsing."""
-    raise NotImplementedError("Codex CLI parsing not yet implemented")
+    """Parse a Codex CLI rollout JSONL transcript into a Session.
+
+    Codex CLI writes rollout files to ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.
+    Each line has a ``type`` field: ``session_meta``, ``event_msg``, or
+    ``response_item``.  Legacy files may use ``type: "message"`` with a ``role``
+    field instead.
+
+    Assumptions (best-effort -- format may evolve):
+    - ``response_item`` lines contain ``item.type`` of ``"message"`` (with
+      ``role`` and ``content``) or ``"function_call"`` (tool invocation).
+    - ``event_msg`` lines with ``payload.type == "token_count"`` carry token
+      usage in ``payload.info.last_token_usage``.
+    - ``session_meta`` provides the session timestamp and model name.
+    """
+    file_path = Path(file_path)
+    session = Session(id=file_path.stem)
+    main_agent = Agent(id="main", name="Codex", color="green")
+    session.agents["main"] = main_agent
+
+    lines = _read_jsonl(file_path)
+
+    for rec in lines:
+        rec_type = rec.get("type", "")
+        timestamp = rec.get("timestamp", "")
+
+        # --- session_meta: first line with session-level info ---
+        if rec_type == "session_meta":
+            session.start_time = timestamp
+            session.version = rec.get("model", "")
+            continue
+
+        # --- response_item: conversation messages and tool calls ---
+        if rec_type == "response_item":
+            item = rec.get("item", {})
+            item_type = item.get("type", "")
+            role = item.get("role", "")
+
+            if item_type == "message":
+                content = _extract_codex_content(item.get("content", []))
+                if role == "user":
+                    session.events.append(
+                        Event(
+                            timestamp=timestamp,
+                            type=EventType.USER,
+                            agent_id="main",
+                            content=content,
+                        )
+                    )
+                else:
+                    session.events.append(
+                        Event(
+                            timestamp=timestamp,
+                            type=EventType.TEXT,
+                            agent_id="main",
+                            content=content,
+                        )
+                    )
+
+            elif item_type == "function_call":
+                tool_name = item.get("name", "unknown")
+                arguments = item.get("arguments", "")
+                event_type = EventType.BASH if tool_name == "shell" else EventType.TOOL_CALL
+                if tool_name in ("write_file", "create_file"):
+                    event_type = EventType.FILE_CREATE
+                elif tool_name in ("edit_file", "patch"):
+                    event_type = EventType.FILE_UPDATE
+                elif tool_name == "read_file":
+                    event_type = EventType.FILE_READ
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=event_type,
+                        agent_id="main",
+                        tool_name=tool_name,
+                        content=arguments[:500] if arguments else tool_name,
+                    )
+                )
+
+            elif item_type == "function_call_output":
+                output = item.get("output", "")
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=EventType.TOOL_RESULT,
+                        agent_id="main",
+                        content=output[:2000] if output else "",
+                    )
+                )
+            continue
+
+        # --- Legacy format: type=message with role ---
+        if rec_type == "message" and "role" in rec:
+            role = rec.get("role", "")
+            content = _extract_codex_content(rec.get("content", []))
+            if role == "user":
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=EventType.USER,
+                        agent_id="main",
+                        content=content,
+                    )
+                )
+            elif role == "assistant":
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=EventType.TEXT,
+                        agent_id="main",
+                        content=content,
+                    )
+                )
+            continue
+
+        # --- event_msg: token counts ---
+        if rec_type == "event_msg":
+            payload = rec.get("payload", rec.get("msg", {}))
+            if isinstance(payload, dict) and payload.get("type") == "token_count":
+                info = payload.get("info", {})
+                usage = info.get("last_token_usage", {})
+                in_tok = usage.get("input_tokens", 0)
+                out_tok = usage.get("output_tokens", 0)
+                cache_tok = usage.get("cached_input_tokens", 0) or usage.get(
+                    "cache_read_input_tokens", 0
+                )
+                main_agent.input_tokens += in_tok
+                main_agent.output_tokens += out_tok
+                main_agent.cache_read_tokens += cache_tok
+            continue
+
+        # --- turn_context: model info ---
+        if rec_type == "turn_context":
+            payload = rec.get("payload", {})
+            model = payload.get("model", "")
+            if model:
+                session.version = model
+            continue
+
+    # Sort events by timestamp
+    session.events.sort(key=lambda e: e.timestamp)
+
+    # Derive start_time from first event if not set via session_meta
+    if not session.start_time and session.events:
+        session.start_time = session.events[0].timestamp
+
+    # Set agent spawn time
+    if session.events:
+        main_agent.spawn_time = session.events[0].timestamp
+
+    return session
+
+
+def _extract_codex_content(content: str | list) -> str:
+    """Extract text from a Codex content field (string or content blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(block.get("text", block.get("content", "")))
+        return "\n".join(p for p in parts if p)
+    return str(content) if content else ""
+
+
+def parse_gemini(file_path: str | Path) -> Session:
+    """Parse a Gemini CLI session log into a Session.
+
+    Gemini CLI currently stores sessions as JSON files in
+    ``~/.gemini/tmp/<hash>/logs.json`` containing a messages array.  A JSONL
+    format (``session-*.jsonl``) is being introduced with ``type`` fields of
+    ``session_metadata``, ``user``, ``gemini``, and ``message_update``.
+
+    This parser handles both the legacy JSON format and the newer JSONL format.
+
+    Assumptions:
+    - Legacy JSON: ``{"messages": [{"role": "user"|"model", "parts": [...]}]}``
+      or a bare list ``[{"role": "user"|"model", "parts": [...]}]``.
+    - JSONL: lines with ``type`` of ``user`` / ``gemini`` and a ``content``
+      array of ``{text: "..."}`` objects.
+    - Tool calls appear as ``functionCall`` parts (legacy) or within content
+      blocks (JSONL).
+    """
+    file_path = Path(file_path)
+    session = Session(id=file_path.stem)
+    main_agent = Agent(id="main", name="Gemini", color="blue")
+    session.agents["main"] = main_agent
+
+    # Try JSON first (legacy format)
+    if file_path.suffix == ".json":
+        _parse_gemini_json(file_path, session, main_agent)
+    else:
+        _parse_gemini_jsonl(file_path, session, main_agent)
+
+    # Sort events and set metadata
+    session.events.sort(key=lambda e: e.timestamp)
+    if session.events:
+        if not session.start_time:
+            session.start_time = session.events[0].timestamp
+        main_agent.spawn_time = session.events[0].timestamp
+
+    return session
+
+
+def _parse_gemini_json(file_path: Path, session: Session, agent: Agent) -> None:
+    """Parse legacy Gemini CLI JSON session file."""
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    messages: list = []
+    if isinstance(data, dict):
+        messages = data.get("messages", data.get("history", []))
+        session.id = data.get("sessionId", session.id)
+        session.start_time = data.get("startTime", data.get("createTime", ""))
+    elif isinstance(data, list):
+        messages = data
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "")
+        parts = msg.get("parts", [])
+        timestamp = msg.get("timestamp", msg.get("createTime", ""))
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+
+            # Text content
+            text = part.get("text", "")
+            if text.strip():
+                event_type = EventType.USER if role == "user" else EventType.TEXT
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=event_type,
+                        agent_id="main",
+                        content=text,
+                    )
+                )
+
+            # Function calls (tool use)
+            fc = part.get("functionCall")
+            if fc and isinstance(fc, dict):
+                tool_name = fc.get("name", "unknown")
+                args = fc.get("args", {})
+                event_type = EventType.BASH if tool_name in ("run_shell", "shell") else EventType.TOOL_CALL
+                if "edit" in tool_name.lower() or "update" in tool_name.lower():
+                    event_type = EventType.FILE_UPDATE
+                elif "read" in tool_name.lower():
+                    event_type = EventType.FILE_READ
+                elif "write" in tool_name.lower() or "create" in tool_name.lower():
+                    event_type = EventType.FILE_CREATE
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=event_type,
+                        agent_id="main",
+                        tool_name=tool_name,
+                        content=json.dumps(args)[:500] if args else tool_name,
+                    )
+                )
+
+            # Function response (tool result)
+            fr = part.get("functionResponse")
+            if fr and isinstance(fr, dict):
+                response = fr.get("response", {})
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=EventType.TOOL_RESULT,
+                        agent_id="main",
+                        content=json.dumps(response)[:2000] if response else "",
+                    )
+                )
+
+
+def _parse_gemini_jsonl(file_path: Path, session: Session, agent: Agent) -> None:
+    """Parse Gemini CLI JSONL session file."""
+    lines = _read_jsonl(file_path)
+
+    for rec in lines:
+        rec_type = rec.get("type", "")
+        timestamp = rec.get("timestamp", "")
+
+        if rec_type == "session_metadata":
+            session.id = rec.get("sessionId", session.id)
+            session.start_time = rec.get("startTime", timestamp)
+            continue
+
+        if rec_type in ("user", "gemini"):
+            content_blocks = rec.get("content", [])
+            event_type = EventType.USER if rec_type == "user" else EventType.TEXT
+            text_parts = []
+            for block in content_blocks:
+                if isinstance(block, dict):
+                    text = block.get("text", "")
+                    if text.strip():
+                        text_parts.append(text)
+
+                    # Tool calls in content blocks
+                    fc = block.get("functionCall")
+                    if fc and isinstance(fc, dict):
+                        tool_name = fc.get("name", "unknown")
+                        args = fc.get("args", {})
+                        tc_type = EventType.BASH if tool_name in ("run_shell", "shell") else EventType.TOOL_CALL
+                        session.events.append(
+                            Event(
+                                timestamp=timestamp,
+                                type=tc_type,
+                                agent_id="main",
+                                tool_name=tool_name,
+                                content=json.dumps(args)[:500] if args else tool_name,
+                            )
+                        )
+
+                elif isinstance(block, str) and block.strip():
+                    text_parts.append(block)
+
+            if text_parts:
+                session.events.append(
+                    Event(
+                        timestamp=timestamp,
+                        type=event_type,
+                        agent_id="main",
+                        content="\n".join(text_parts),
+                    )
+                )
+            continue
+
+        # Token updates
+        if rec_type == "message_update":
+            tokens = rec.get("tokens", {})
+            agent.input_tokens += tokens.get("input", 0)
+            agent.output_tokens += tokens.get("output", 0)
+            continue
 
 
 def parse_claude_code(file_path: str | Path) -> Session:

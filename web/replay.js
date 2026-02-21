@@ -299,8 +299,10 @@ export function initReplay() {
 
 export async function startReplayForSession(filePath) {
     try {
-        const resp = await fetch('/api/session/' + encodeURIComponent(filePath));
-        const data = await resp.json();
+        // Reuse session data if already loaded by showSessionView
+        const data = (state.session && state.session.events && state.session.events.length > 0)
+            ? state.session
+            : await fetch('/api/session/' + encodeURIComponent(filePath)).then(r => r.json());
         if (data.error || !data.events || data.events.length === 0) {
             return;
         }

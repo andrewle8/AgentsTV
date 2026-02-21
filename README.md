@@ -1,22 +1,28 @@
 # AgentsTV
 
-Twitch-style live visualizer for Claude Code sessions. Watch AI code monkeys work in real-time with pixel art webcams, animated chat, and streaming overlays.
+[![PyPI version](https://img.shields.io/pypi/v/agent-replay)](https://pypi.org/project/agent-replay/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
+Turn your AI coding agent sessions into a Twitch-style pixel art stream.
+
+<!-- TODO: Add demo GIF here -->
 ![AgentsTV screenshot](screenshot.png)
 
-## The Build
+## Quick Start
+
+```bash
+pip install agent-replay
+agent-replay
+```
+
+That's it. The dashboard auto-discovers session logs and opens in your browser.
+
+## About
 
 The idea started as a simple TUI to replay Claude Code session logs. I built the first version, went to bed, and woke up wanting something completely different: a Twitch-style live dashboard with pixel art characters, LLM-powered chat, and streaming overlays. The full web app was built and published in about 12 hours.
 
 Built with Claude Code. I made the architectural decisions and directed the implementation across Python, JavaScript, HTML, and CSS.
-
-## Install
-
-```bash
-pip install agent-replay
-```
-
-Requires Python 3.10+ and a `~/.claude/projects/` directory with Claude Code session logs.
 
 ## Usage
 
@@ -200,6 +206,11 @@ web/
   shortcuts.js    # Keyboard shortcut overlay and handlers
   alerts.js       # Stream alert toast notifications
   theme.js        # Dark/light theme toggle
+  clips.js        # WebM clip recording via canvas.captureStream
+  replay.js       # Session replay/playback with timeline controls
+  overlay.html    # OBS Browser Source overlay (standalone page)
+  overlay.js      # OBS overlay entry point and rendering
+  overlay.css     # OBS overlay styles (transparent background support)
 ```
 
 ### API Endpoints
@@ -229,6 +240,25 @@ web/
 ## Supported Formats
 
 - **Claude Code** JSONL transcripts (full support)
+- **Codex CLI** session logs (experimental)
+- **Gemini CLI** session logs (experimental)
+
+## Contributing
+
+Contributions are welcome! AgentsTV is MIT-licensed and open to PRs.
+
+```bash
+git clone https://github.com/andrewle8/AgentsTV.git
+cd AgentsTV
+pip install -e .
+agent-replay --no-browser
+```
+
+Areas where help is especially welcome:
+- Additional agent format parsers (Copilot CLI, Aider, etc.)
+- Custom pixel art themes and character skins
+- Mobile layout improvements
+- OBS overlay enhancements
 
 ## License
 
