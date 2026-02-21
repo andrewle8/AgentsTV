@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.0
+
+### New Features
+- Add session replay/playback mode with play/pause, seek, speed control, and timeline
+- Add WebM clip recording via canvas.captureStream() + MediaRecorder
+- Add OBS Browser Source overlay (standalone page at `/overlay.html`)
+- Add Codex CLI session log parsing (experimental)
+- Add Gemini CLI session log parsing (experimental)
+
+### Performance
+- Add `/api/session-preview/{id}` lightweight endpoint for dashboard thumbnails
+- Replace multi-pass scanner with single-pass file reading
+- Wrap `scan_sessions()` in `asyncio.to_thread()` to avoid blocking the event loop
+- Replace full `scan_sessions()` call with direct `stat()` in activity check
+- Cap session view at 2000 events to prevent memory bloat
+- Stop pixel art animations before dashboard re-render to prevent RAF leaks
+- Remove redundant `updateAgentCount()` call from chat message append
+- Fix replay double-fetch — reuse already-loaded session data
+- Fix parse cache evicting wrong entries for same-path files
+- Fix `low_power` string-to-bool coercion bug
+
 ## v0.4.0
 
 ### Security
