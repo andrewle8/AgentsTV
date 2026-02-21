@@ -15,6 +15,7 @@ import {
 import { connectWithRetry, navigate } from './dashboard.js';
 import { syncLlmToggleUI } from './settings.js';
 import { playTipSound } from './sound.js';
+import { startReplayForSession } from './replay.js';
 
 // ============================================================
 // UPTIME TIMER
@@ -216,6 +217,13 @@ export function setupActions(filePath) {
         followBtn.classList.toggle('following', state.following);
         persistFollow(filePath);
     };
+
+    const replayBtn = document.getElementById('replay-session-btn');
+    if (replayBtn) {
+        replayBtn.onclick = () => {
+            navigate('#/replay/' + encodeURIComponent(filePath));
+        };
+    }
 }
 
 function renderSession() {

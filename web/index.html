@@ -69,6 +69,7 @@
                         </div>
                         <div class="video-overlay-top">
                             <span id="live-badge" class="live-badge">LIVE</span>
+                            <span id="replay-badge" class="replay-badge" style="display:none">REPLAY</span>
                             <span id="viewer-count" class="viewer-count">👁 0</span>
                         </div>
                     </div>
@@ -81,6 +82,9 @@
                                 <div class="stream-title" id="session-meta"></div>
                             </div>
                             <div class="stream-actions">
+                                <button id="record-btn" class="action-btn record-btn" title="Record clip">
+                                    <span class="record-dot"></span> <span id="record-duration"></span>
+                                </button>
                                 <button id="like-btn" class="action-btn like-btn">
                                     <span class="heart">♥</span> <span id="like-count">0</span>
                                 </button>
@@ -88,6 +92,7 @@
                                     💎 Tip
                                 </button>
                                 <button id="follow-btn" class="action-btn follow-btn">+ Follow</button>
+                                <button id="replay-session-btn" class="action-btn replay-btn" title="Replay session">&#x25B6; Replay</button>
                             </div>
                         </div>
                         <!-- Donation goal -->
@@ -151,6 +156,22 @@
                         </div>
                     </div>
                 </div>
+            </div>
+            <!-- Replay control bar -->
+            <div id="replay-controls" class="replay-controls" style="display:none">
+                <button id="replay-play-btn" class="replay-btn-ctrl" title="Play">&#x25B6;</button>
+                <div id="replay-progress-track" class="replay-progress-track" title="Click to seek">
+                    <div id="replay-progress-fill" class="replay-progress-fill"></div>
+                </div>
+                <span id="replay-position" class="replay-position"></span>
+                <span id="replay-time" class="replay-time"></span>
+                <select id="replay-speed-select" class="replay-speed-select" title="Playback speed">
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                    <option value="8">8x</option>
+                </select>
+                <button id="replay-exit-btn" class="replay-btn-ctrl replay-exit" title="Exit replay">&times;</button>
             </div>
         </div>
         <!-- Settings Modal -->

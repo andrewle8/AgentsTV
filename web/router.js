@@ -6,12 +6,14 @@ import { stopViewerChat } from './chat.js';
 import { showDashboard } from './dashboard.js';
 import { showSessionView, hideCodeOverlay, stopUptimeTimer } from './session.js';
 import { showMasterChannel } from './master.js';
+import { stopReplay, startReplayForSession } from './replay.js';
 
 export function handleRoute() {
     stopAllAnimations();
     stopViewerChat();
     hideCodeOverlay();
     stopUptimeTimer();
+    stopReplay();
     state.reaction = null;
     state.typingSpeed = 1.0;
     state.chatFullscreen = false;
@@ -20,6 +22,11 @@ export function handleRoute() {
     const hash = window.location.hash || '#/';
     if (hash === '#/master') {
         showMasterChannel();
+    } else if (hash.startsWith('#/replay/')) {
+        const filePath = decodeURIComponent(hash.slice('#/replay/'.length));
+        showSessionView(filePath).then(() => {
+            startReplayForSession(filePath);
+        });
     } else if (hash.startsWith('#/session/')) {
         const filePath = decodeURIComponent(hash.slice('#/session/'.length));
         showSessionView(filePath);

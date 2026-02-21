@@ -118,6 +118,8 @@ export let state = {
     uptimeInterval: null,
     // Theme (dark/light)
     theme: 'dark',
+    // Replay state
+    replay: { active: false, speed: 1, position: 0, playing: false, timer: null },
 };
 
 // Simple event bus

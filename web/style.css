@@ -421,6 +421,40 @@ body {
     color: var(--text-dim);
 }
 
+/* Record clip button */
+.record-btn {
+    background: var(--bg-surface2);
+    color: var(--text);
+    gap: 6px;
+}
+.record-btn:hover { background: var(--bg-hover); }
+.record-btn .record-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+}
+.record-btn.recording {
+    background: rgba(235, 4, 0, 0.15);
+    border: 1px solid var(--red);
+}
+.record-btn.recording .record-dot {
+    animation: recordPulse 1s ease-in-out infinite;
+    box-shadow: 0 0 6px var(--red);
+}
+.record-btn.recording #record-duration {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--red-soft);
+    font-weight: 700;
+}
+@keyframes recordPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
 /* Donation goal */
 .donation-goal {
     margin-top: 12px;
@@ -1442,6 +1476,135 @@ select.settings-input { cursor: pointer; }
     outline: none;
 }
 
+/* === REPLAY CONTROLS === */
+.replay-badge {
+    background: var(--purple);
+    color: white;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 2px 10px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    animation: replayPulse 2s ease-in-out infinite;
+}
+@keyframes replayPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.replay-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: rgba(14, 14, 16, 0.95);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    backdrop-filter: blur(8px);
+}
+
+.replay-btn-ctrl {
+    background: var(--bg-surface2);
+    border: none;
+    color: var(--text);
+    font-size: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.replay-btn-ctrl:hover { background: var(--purple); }
+.replay-btn-ctrl.replay-exit {
+    font-size: 20px;
+    border-radius: 4px;
+    width: 32px;
+    height: 32px;
+}
+.replay-btn-ctrl.replay-exit:hover { background: var(--red-soft); }
+
+.replay-progress-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-surface2);
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+.replay-progress-track:hover { height: 12px; }
+
+.replay-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--purple), var(--purple-light));
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.15s linear;
+    pointer-events: none;
+}
+
+.replay-position {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    min-width: 70px;
+    text-align: center;
+}
+
+.replay-time {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    min-width: 80px;
+    text-align: center;
+}
+
+.replay-speed-select {
+    background: var(--bg-surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+    outline: none;
+}
+.replay-speed-select:focus { border-color: var(--purple); }
+
+/* Replay button in stream actions */
+.action-btn.replay-btn {
+    background: var(--bg-surface2);
+    color: var(--purple-light);
+}
+.action-btn.replay-btn:hover { background: var(--purple); color: white; }
+
+/* Replay overlay on dashboard cards */
+.replay-card-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 40px;
+    background: rgba(145, 70, 255, 0.85);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 8px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 2;
+}
+.channel-thumb:hover .replay-card-btn { opacity: 1; }
+.replay-card-btn:hover { background: var(--purple); }
+
 /* Responsive */
 @media (max-width: 900px) {
     .chat-sidebar { width: 280px; min-width: 240px; }
@@ -1455,4 +1618,7 @@ select.settings-input { cursor: pointer; }
     .code-overlay { display: none; }
     .browse-controls { flex-direction: column; width: 100%; }
     .session-search { width: 100%; }
+    .replay-controls { gap: 6px; padding: 6px 10px; }
+    .replay-position { display: none; }
+    .replay-time { min-width: 60px; font-size: 10px; }
 }

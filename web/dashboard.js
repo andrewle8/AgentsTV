@@ -152,6 +152,7 @@ export function renderDashboard() {
                 <div class="thumb-overlay">${pill}</div>
                 <span class="thumb-viewers">${viewers}</span>
                 <span class="thumb-time">${timeAgo}</span>
+                <button class="replay-card-btn" data-replay-path="${esc(s.file_path)}" title="Replay session">&#x25B6; Replay</button>
             </div>
             <div class="channel-info">
                 <div class="${avatarClass}">\uD83D\uDC12</div>
@@ -171,6 +172,14 @@ export function renderDashboard() {
             } else {
                 navigate('#/session/' + encodeURIComponent(card.dataset.path));
             }
+        });
+    });
+
+    grid.querySelectorAll('.replay-card-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const filePath = btn.dataset.replayPath;
+            navigate('#/replay/' + encodeURIComponent(filePath));
         });
     });
 
