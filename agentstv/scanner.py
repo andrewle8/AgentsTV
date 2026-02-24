@@ -188,8 +188,8 @@ def _build_summary(
                     if rec.get("type") == "event_msg":
                         payload = rec.get("payload", rec.get("msg", {}))
                         if isinstance(payload, dict) and payload.get("type") == "token_count":
-                            info = payload.get("info", {})
-                            usage = info.get("last_token_usage", {})
+                            info = payload.get("info") or {}
+                            usage = info.get("last_token_usage") or {}
                             total_in += usage.get("input_tokens", 0)
                             total_out += usage.get("output_tokens", 0)
 
