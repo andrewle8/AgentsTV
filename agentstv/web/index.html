@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentsTV</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="reconnect-banner" class="reconnect-banner">Reconnecting</div>
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view">
+            <header class="top-bar">
+                <span class="logo"><span class="logo-icon">▶</span> AgentsTV</span>
+                <nav class="top-nav">
+                    <span class="nav-item active">Browse</span>
+                    <span class="nav-item">Following</span>
+                </nav>
+                <span class="top-spacer"></span>
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle dark/light theme">🌙</button>
+                <button id="mute-btn" class="icon-btn" title="Mute sounds">🔊</button>
+                <button id="settings-btn" class="settings-btn" title="LLM Settings">⚙</button>
+                <span id="dash-status" class="conn-status"></span>
+            </header>
+            <div class="browse-header">
+                <h2>Live Channels <span id="channel-count" class="dim"></span></h2>
+                <div class="browse-controls">
+                    <input id="session-search" class="session-search" type="text" placeholder="Search projects, branches..." autocomplete="off">
+                    <select id="session-sort" class="session-sort">
+                        <option value="recent">Most Recent</option>
+                        <option value="events">Most Events</option>
+                        <option value="agents">Most Agents</option>
+                    </select>
+                </div>
+            </div>
+            <div id="session-grid" class="session-grid"></div>
+            <div id="no-sessions" class="empty-state" style="display:none">
+                No streams found — waiting for agents in ~/.claude/projects/
+            </div>
+        </div>
+
+        <!-- Session Detail View (Stream) -->
+        <div id="session-view" class="view" style="display:none">
+            <header class="top-bar">
+                <button id="back-btn" class="back-btn" title="Back to browse">◂ Browse</button>
+                <span class="logo"><span class="logo-icon">▶</span> AgentsTV</span>
+                <span class="top-spacer"></span>
+                <span id="uptime-timer" class="uptime-timer"></span>
+                <span id="llm-model-label" class="llm-model-label"></span>
+                <button id="llm-toggle-btn" class="llm-toggle-btn" title="Toggle LLM on/off">&#x1F9E0;</button>
+                <button id="theme-toggle-btn-session" class="icon-btn" title="Toggle dark/light theme">🌙</button>
+                <button id="mute-btn-session" class="icon-btn" title="Mute sounds">🔊</button>
+                <button id="settings-btn-session" class="settings-btn" title="LLM Settings">⚙</button>
+                <span id="session-status" class="conn-status"></span>
+            </header>
+            <div class="stream-layout">
+                <!-- Main content area -->
+                <div class="stream-main">
+                    <!-- Video / Webcam area -->
+                    <div class="video-container">
+                        <canvas id="webcam-canvas" width="640" height="360"></canvas>
+                        <div id="code-overlay" class="code-overlay">
+                            <div class="code-overlay-header">
+                                <span id="code-overlay-type" class="code-overlay-type"></span>
+                                <span id="code-overlay-file" class="code-overlay-file"></span>
+                            </div>
+                            <pre id="code-overlay-body" class="code-overlay-body"></pre>
+                        </div>
+                        <div class="video-overlay-top">
+                            <span id="live-badge" class="live-badge">LIVE</span>
+                            <span id="replay-badge" class="replay-badge" style="display:none">REPLAY</span>
+                            <span id="viewer-count" class="viewer-count">👁 0</span>
+                        </div>
+                    </div>
+                    <!-- Stream info bar -->
+                    <div class="stream-info">
+                        <div class="streamer-row">
+                            <div class="streamer-avatar" id="streamer-avatar">🤖</div>
+                            <div class="streamer-details">
+                                <div class="streamer-name" id="session-slug"></div>
+                                <div class="stream-title" id="session-meta"></div>
+                            </div>
+                            <div class="stream-actions">
+                                <button id="record-btn" class="action-btn record-btn" title="Record clip">
+                                    <span class="record-dot"></span> <span id="record-duration"></span>
+                                </button>
+                                <button id="like-btn" class="action-btn like-btn">
+                                    <span class="heart">♥</span> <span id="like-count">0</span>
+                                </button>
+                                <button id="tip-btn" class="action-btn tip-btn">
+                                    💎 Tip
+                                </button>
+                                <button id="follow-btn" class="action-btn follow-btn">+ Follow</button>
+                                <button id="replay-session-btn" class="action-btn replay-btn" title="Replay session">&#x25B6; Replay</button>
+                            </div>
+                        </div>
+                        <!-- Donation goal -->
+                        <div class="donation-goal">
+                            <div class="goal-header">
+                                <span>🎯 Token Goal</span>
+                                <span id="goal-text" class="goal-text"></span>
+                            </div>
+                            <div class="goal-bar-bg">
+                                <div id="goal-bar" class="goal-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Files panel (bottom-left) -->
+                    <div class="stream-files">
+                        <div class="stream-files-header">
+                            📁 FILES <span id="files-count" class="dim"></span>
+                        </div>
+                        <div id="files-panel" class="stream-files-body"></div>
+                    </div>
+                </div>
+
+                <!-- Chat sidebar -->
+                <div class="chat-sidebar">
+                    <div class="chat-header">
+                        <span>STREAM CHAT</span>
+                        <span id="event-count" class="dim"></span>
+                        <span id="new-events-badge" class="new-badge" style="display:none"></span>
+                        <button id="split-chat-btn" class="split-chat-btn" title="Split chat">⫼</button>
+                        <button id="expand-chat-btn" class="expand-chat-btn" title="Toggle fullscreen chat">⛶</button>
+                    </div>
+                    <div class="chat-mods-bar" id="agents-panel"></div>
+                    <div class="chat-container">
+                        <!-- Combined mode (default) -->
+                        <div class="chat-pane-body" id="chat-log"></div>
+                        <!-- Split mode (hidden by default) -->
+                        <div class="chat-pane viewer-pane" style="display:none">
+                            <div class="chat-pane-header">VIEWER CHAT <span id="viewer-chat-count"></span></div>
+                            <div class="chat-pane-body" id="viewer-log"></div>
+                        </div>
+                        <div class="chat-pane-divider" style="display:none"></div>
+                        <div class="chat-pane agent-pane" style="display:none">
+                            <div class="chat-pane-header">AGENT LOG <span id="agent-log-count"></span></div>
+                            <div class="chat-pane-body" id="event-log"></div>
+                        </div>
+                        <button id="scroll-bottom-btn" class="scroll-bottom-btn" style="display:none" title="Scroll to bottom">↓ New messages</button>
+                    </div>
+                    <div id="chat-reply-preview" class="chat-reply-preview" style="display:none">
+                        <span id="chat-reply-text" class="chat-reply-text"></span>
+                        <button id="chat-reply-cancel" class="chat-reply-cancel">&times;</button>
+                    </div>
+                    <div class="chat-input-bar">
+                        <input id="chat-input" class="chat-input" type="text" placeholder="Ask about this stream..." autocomplete="off">
+                        <button id="chat-send-btn" class="chat-send-btn" title="Send">&#x25B6;</button>
+                    </div>
+                    <div class="chat-actions">
+                        <div class="chat-filters">
+                            <button id="export-chat-btn" class="filter-toggle-btn" title="Export chat log (E)">↓ Export</button>
+                            <button id="filter-toggle-btn" class="filter-toggle-btn">⚙ Filters</button>
+                            <div id="filters-panel" class="filters-dropdown" style="display:none"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Replay control bar -->
+            <div id="replay-controls" class="replay-controls" style="display:none">
+                <button id="replay-play-btn" class="replay-btn-ctrl" title="Play">&#x25B6;</button>
+                <div id="replay-progress-track" class="replay-progress-track" title="Click to seek">
+                    <div id="replay-progress-fill" class="replay-progress-fill"></div>
+                </div>
+                <span id="replay-position" class="replay-position"></span>
+                <span id="replay-time" class="replay-time"></span>
+                <select id="replay-speed-select" class="replay-speed-select" title="Playback speed">
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                    <option value="8">8x</option>
+                </select>
+                <button id="replay-exit-btn" class="replay-btn-ctrl replay-exit" title="Exit replay">&times;</button>
+            </div>
+        </div>
+        <!-- Settings Modal -->
+        <div id="settings-overlay" class="settings-overlay" style="display:none">
+            <div class="settings-modal">
+                <div class="settings-header">
+                    <span>LLM Settings</span>
+                    <button id="settings-close-btn" class="settings-close-btn">&times;</button>
+                </div>
+                <form id="settings-form" class="settings-form">
+                    <label class="settings-label">Provider</label>
+                    <select id="s-provider" class="settings-input">
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="openai">OpenAI (cloud)</option>
+                        <option value="anthropic">Anthropic (cloud)</option>
+                        <option value="off">Off (disabled)</option>
+                    </select>
+
+                    <label class="settings-label">Hardware Profile</label>
+                    <select id="s-hw-profile" class="settings-input">
+                        <option value="desktop">Desktop GPU (12GB+ VRAM)</option>
+                        <option value="laptop">Laptop (8GB VRAM)</option>
+                        <option value="cloud">Cloud Only (no local GPU)</option>
+                    </select>
+                    <div class="settings-hint" id="s-hw-hint">Suggests models and buffer sizes for your hardware.</div>
+
+                    <div id="s-ollama-fields">
+                        <label class="settings-label">Ollama URL</label>
+                        <input id="s-ollama-url" class="settings-input" type="text" placeholder="http://localhost:11434">
+                        <label class="settings-label">Ollama Model</label>
+                        <select id="s-ollama-model" class="settings-input">
+                            <option value="" disabled selected>— select a model —</option>
+                        </select>
+                        <input id="s-ollama-model-fallback" class="settings-input" type="text" placeholder="model name" style="display:none">
+                        <div class="settings-hint">First message may be slow while the model loads into memory.</div>
+                    </div>
+
+                    <div id="s-openai-fields" style="display:none">
+                        <label class="settings-label">API Key</label>
+                        <input id="s-openai-key" class="settings-input" type="password" placeholder="sk-…">
+                        <label class="settings-label">OpenAI Model</label>
+                        <input id="s-openai-model" class="settings-input" type="text" placeholder="gpt-4o-mini">
+                    </div>
+
+                    <div id="s-anthropic-fields" style="display:none">
+                        <label class="settings-label">API Key</label>
+                        <input id="s-anthropic-key" class="settings-input" type="password" placeholder="sk-ant-…">
+                        <label class="settings-label">Anthropic Model</label>
+                        <input id="s-anthropic-model" class="settings-input" type="text" placeholder="claude-haiku-4-5-20241022">
+                    </div>
+
+                    <div class="settings-divider"></div>
+                    <label class="settings-label">Chat Username</label>
+                    <input id="s-viewer-name" class="settings-input" type="text" placeholder="your name in chat" maxlength="20">
+                    <div class="settings-hint">Shown in viewer chat instead of "you".</div>
+
+                    <div class="settings-divider"></div>
+                    <div class="settings-section-toggle" id="tuning-toggle">▸ Tuning</div>
+                    <div id="tuning-fields" style="display:none">
+                        <label class="settings-label">Chat Speed</label>
+                        <select id="s-chat-speed" class="settings-input">
+                            <option value="slow">Slow (5-15s)</option>
+                            <option value="normal" selected>Normal (3-10s)</option>
+                            <option value="fast">Fast (1-3s)</option>
+                        </select>
+
+                        <label class="settings-label">Narrator Frequency (seconds)</label>
+                        <div class="settings-range-row">
+                            <input id="s-narrator-freq" class="settings-range" type="range" min="5" max="120" value="20">
+                            <span id="s-narrator-freq-val" class="settings-range-val">20s</span>
+                        </div>
+
+                        <label class="settings-label">Tip Chance (%)</label>
+                        <div class="settings-range-row">
+                            <input id="s-tip-chance" class="settings-range" type="range" min="0" max="50" value="15">
+                            <span id="s-tip-chance-val" class="settings-range-val">15%</span>
+                        </div>
+
+                        <label class="settings-label">Reaction Chance (%)</label>
+                        <div class="settings-range-row">
+                            <input id="s-reaction-chance" class="settings-range" type="range" min="0" max="100" value="50">
+                            <span id="s-reaction-chance-val" class="settings-range-val">50%</span>
+                        </div>
+
+                        <label class="settings-label">Chat Buffer Size</label>
+                        <input id="s-buffer-size" class="settings-input" type="number" min="3" max="25" value="10">
+
+                        <label class="settings-label">Code Overlay Duration (seconds)</label>
+                        <div class="settings-range-row">
+                            <input id="s-overlay-duration" class="settings-range" type="range" min="5" max="60" value="15">
+                            <span id="s-overlay-duration-val" class="settings-range-val">15s</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="settings-save-btn">Save</button>
+                    <div id="settings-msg" class="settings-msg"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>

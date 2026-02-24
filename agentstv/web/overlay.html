@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentsTV OBS Overlay</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/overlay.css">
+</head>
+<body class="overlay-body">
+    <div id="overlay-root">
+        <canvas id="webcam-canvas" width="640" height="360"></canvas>
+        <div id="overlay-info" class="overlay-info">
+            <span id="live-badge" class="live-badge">LIVE</span>
+            <span id="session-slug" class="overlay-slug"></span>
+        </div>
+        <div id="code-overlay" class="code-overlay">
+            <div class="code-overlay-header">
+                <span id="code-overlay-type" class="code-overlay-type"></span>
+                <span id="code-overlay-file" class="code-overlay-file"></span>
+            </div>
+            <pre id="code-overlay-body" class="code-overlay-body"></pre>
+        </div>
+        <div id="chat-panel" class="overlay-chat">
+            <div class="overlay-chat-header">STREAM CHAT</div>
+            <div id="chat-log" class="overlay-chat-log"></div>
+        </div>
+        <div id="alert-container" class="alert-container"></div>
+    </div>
+    <script type="module" src="/static/overlay.js"></script>
+</body>
+</html>

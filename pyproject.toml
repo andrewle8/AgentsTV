@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentstv"
+version = "0.6.5"
+description = "Web-based agent session visualizer for Claude Code"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104",
+    "uvicorn[standard]>=0.24",
+    "httpx>=0.25",
+]
+
+[project.scripts]
+agentstv = "agentstv.server:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "httpx>=0.25"]
+e2e = ["playwright>=1.40"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentstv"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

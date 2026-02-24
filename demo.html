@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>agent-replay demo capture</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0e0e1a; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Consolas', monospace; }
+.demo {
+    display: flex;
+    width: 900px;
+    height: 500px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid #2a2a3a;
+    box-shadow: 0 0 40px rgba(145, 70, 255, 0.15);
+}
+.webcam-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a18;
+}
+canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+.webcam-wrap { flex: 1; position: relative; }
+.info-bar {
+    background: #18181b;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid #2a2a3a;
+}
+.info-bar .name { color: #9146ff; font-weight: 700; font-size: 14px; }
+.info-bar .meta { color: #666; font-size: 11px; }
+.info-bar .live { background: #e91916; color: white; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.goal-bar-bg { flex: 1; height: 6px; background: #1a1a2e; border-radius: 3px; overflow: hidden; }
+.goal-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #9146ff, #f0c674); border-radius: 3px; transition: width 0.5s; }
+.actions { display: flex; gap: 6px; }
+.actions button { background: #2a2a3a; color: #ccc; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.actions button:hover { background: #3a3a4a; }
+.actions .liked { color: #e91916; }
+
+.chat-area {
+    width: 300px;
+    background: #18181b;
+    border-left: 1px solid #2a2a3a;
+    display: flex;
+    flex-direction: column;
+}
+.chat-header { padding: 10px 14px; border-bottom: 1px solid #2a2a3a; color: #efeff1; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.chat-log { flex: 1; overflow-y: auto; padding: 8px 0; font-size: 11px; }
+.chat-msg { padding: 2px 14px; line-height: 1.6; color: #adadb8; }
+.chat-msg .badge { font-size: 9px; margin-right: 2px; }
+.chat-msg .name { font-weight: 700; }
+.chat-msg .name::after { content: ": "; color: #666; }
+.chat-msg.tip { background: linear-gradient(90deg, rgba(0,180,216,0.15), transparent); border-left: 3px solid #00b4d8; padding-left: 11px; }
+.chat-msg .tip-amt { color: #00b4d8; font-weight: 700; }
+.chat-msg .tok { background: #f0c674; color: #0a0a18; font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 2px; margin-left: 3px; }
+</style>
+</head>
+<body>
+<div class="demo">
+    <div class="webcam-area">
+        <div class="webcam-wrap"><canvas id="c" width="600" height="400"></canvas></div>
+        <div class="info-bar">
+            <span class="live">LIVE</span>
+            <span class="name">my-project</span>
+            <span class="meta">Coding &middot; Claude Code</span>
+            <div class="goal-bar-bg"><div class="goal-bar" id="goal"></div></div>
+            <div class="actions">
+                <button id="likeBtn">&#9829; 42</button>
+                <button>Tip</button>
+                <button>+ Follow</button>
+            </div>
+        </div>
+    </div>
+    <div class="chat-area">
+        <div class="chat-header">Stream Chat</div>
+        <div class="chat-log" id="chat"></div>
+    </div>
+</div>
+<script>
+// Inline minimal pixel art engine for demo capture
+const PALETTES = [
+    { fur: '#8B5E3C', face: '#D4A574', belly: '#C8A882', shirt: '#9146ff', monitor: '#003322', chair: '#252540' },
+];
+const pal = PALETTES[0];
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let frame = 0;
+let reaction = null;
+let goalPct = 10;
+
+function darken(hex, amt) {
+    const r = Math.max(0, parseInt(hex.slice(1,3),16) - amt);
+    const g = Math.max(0, parseInt(hex.slice(3,5),16) - amt);
+    const b = Math.max(0, parseInt(hex.slice(5,7),16) - amt);
+    return `rgb(${r},${g},${b})`;
+}
+
+function draw() {
+    const w = canvas.width, h = canvas.height, px = 4;
+    const rx = reaction;
+    const rxActive = rx && (frame - rx.start) < rx.dur;
+    const rxType = rxActive ? rx.type : null;
+    const rxP = rxActive ? (frame - rx.start) / rx.dur : 0;
+
+    if (rx && !rxActive && rx.start > 0) reaction = null;
+
+    // Background
+    if (rxType === 'error' && rxP < 0.3) {
+        const f = Math.sin(rxP * Math.PI / 0.3) * 0.3;
+        ctx.fillStyle = `rgb(${Math.floor(10+f*120)},10,24)`;
+    } else { ctx.fillStyle = '#0a0a18'; }
+    ctx.fillRect(0,0,w,h);
+
+    // Window
+    const winX = w*0.78, winY = h*0.05, winW = px*12, winH = px*10;
+    ctx.fillStyle = '#3a3a44'; ctx.fillRect(winX-px,winY-px,winW+px*2,winH+px*2);
+    ctx.fillStyle = '#0a0a2a'; ctx.fillRect(winX,winY,winW,winH);
+    ctx.fillStyle = '#ffffcc'; ctx.fillRect(winX+px*2,winY+px*2,px*3,px*3);
+    ctx.fillStyle = '#0a0a2a'; ctx.fillRect(winX+px*3,winY+px*1.5,px*2,px*2);
+    ctx.fillStyle = '#fff';
+    if(frame%40<30) ctx.fillRect(winX+px*7,winY+px*3,1,1);
+    if(frame%50<35) ctx.fillRect(winX+px*9,winY+px*1,1,1);
+    ctx.fillStyle = '#3a3a44'; ctx.fillRect(winX-px*2,winY+winH+px,winW+px*4,px);
+
+    // Floor
+    ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0,h*0.72,w,h*0.28);
+    ctx.fillStyle = '#151528';
+    for(let x=0;x<w;x+=px*8) ctx.fillRect(x,h*0.72,px*4,h*0.28);
+
+    // Desk
+    const deskY = h*0.55, deskH = px*4;
+    const shake = (rxType==='error'&&rxP<0.3) ? Math.sin(frame*2) : 0;
+    ctx.fillStyle = '#3d2b1f'; ctx.fillRect(w*0.12+shake,deskY,w*0.76,deskH);
+    ctx.fillStyle = darken('#3d2b1f',30);
+    ctx.fillRect(w*0.12,deskY+deskH,w*0.76,px);
+    ctx.fillRect(w*0.15,deskY+deskH,px*2,h*0.17);
+    ctx.fillRect(w*0.81,deskY+deskH,px*2,h*0.17);
+
+    // Monitor
+    const monX=w*0.32, monY=deskY-px*18, monW=px*28, monH=px*16;
+    ctx.fillStyle='#2c2c34'; ctx.fillRect(monX-px,monY-px,monW+px*2,monH+px*2);
+    ctx.fillStyle=pal.monitor; ctx.fillRect(monX,monY,monW,monH);
+    ctx.fillStyle='rgba(0,0,0,0.12)';
+    for(let y=monY;y<monY+monH;y+=px*2) ctx.fillRect(monX,y,monW,1);
+
+    // Code on monitor
+    const codeColors = ['#00ff41','#00cc33','#66ff66','#33ff88'];
+    const scroll = (frame*0.5)%30;
+    const maxRows = Math.floor((monH-px*2)/(px*2));
+    const maxCols = Math.floor((monW-px*2)/px);
+    for(let row=0;row<maxRows;row++){
+        const ly=monY+px+row*px*2;
+        if(ly>=monY+monH-px) continue;
+        const ls=(7+row+Math.floor(scroll))*31;
+        const ll=Math.min(maxCols-2,4+(ls%(maxCols-6)));
+        const indent=(ls>>4)%5;
+        ctx.fillStyle=codeColors[(row+Math.floor(scroll))%codeColors.length];
+        for(let c=0;c<ll;c++){if((ls+c*13)%100<18)continue;const cx=monX+px*(indent+1+c);if(cx+px>monX+monW-px)break;ctx.fillRect(cx,ly,px-1,px-1);}
+    }
+    if(frame%30<15){ctx.fillStyle='#fff';ctx.fillRect(monX+px*10,monY+px+4*px*2,px,px*1.5);}
+
+    // Monitor stand
+    ctx.fillStyle='#2c2c34';
+    const sx=monX+monW/2;
+    ctx.fillRect(sx-px*2,monY+monH+px,px*4,px*2);
+    ctx.fillRect(sx-px*4,monY+monH+px*2,px*8,px);
+
+    // Monitor glow
+    const ga = 0.04+Math.sin(frame*0.02)*0.015;
+    ctx.fillStyle=`rgba(0,80,50,${ga})`; ctx.fillRect(w*0.25,h*0.05,w*0.5,h*0.45);
+
+    // Chair
+    const charX=w*0.42, charY=deskY-px*2;
+    ctx.fillStyle=darken(pal.chair,20); ctx.fillRect(charX-px*2,charY-px*4,px*14,px*8);
+    ctx.fillStyle=pal.chair; ctx.fillRect(charX-px,charY-px*3,px*12,px*6);
+
+    // === MONKEY ===
+    const breathY = Math.sin(frame*0.04);
+    const fur=pal.fur, face=pal.face, belly=pal.belly;
+
+    // Tail
+    const ts=Math.sin(frame*0.06)*px*2;
+    ctx.fillStyle=fur;
+    ctx.fillRect(charX+px*8+ts*0.3,charY-px*3+breathY,px,px*2);
+    ctx.fillRect(charX+px*9+ts*0.6,charY-px*4+breathY,px,px*2);
+    ctx.fillRect(charX+px*10+ts,charY-px*5+breathY,px,px);
+    ctx.fillRect(charX+px*11+ts,charY-px*6+breathY,px,px);
+    ctx.fillRect(charX+px*11+ts-px*0.5,charY-px*7+breathY,px,px);
+
+    // Body
+    ctx.fillStyle=fur; ctx.fillRect(charX+px*1.5,charY-px*6+breathY,px*7,px*5);
+    ctx.fillStyle=pal.shirt; ctx.fillRect(charX+px*2,charY-px*5.5+breathY,px*6,px*4);
+    ctx.fillStyle=belly; ctx.fillRect(charX+px*3.5,charY-px*5+breathY,px*3,px*3);
+
+    // Head
+    let hox=0, hoy=breathY;
+    if(rxType==='error'){hoy+=rxP<0.2?-px*2*(rxP/0.2):-px*2*(1-(rxP-0.2)/0.8);hox+=Math.sin(frame*1.5)*px*(rxP<0.3?1:0);}
+    else if(rxType==='complete'){hoy+=-Math.abs(Math.sin(rxP*Math.PI*3))*px*2;}
+
+    const hx=charX+px*3+hox, hy=charY-px*11+hoy;
+    ctx.fillStyle=fur;
+    ctx.fillRect(hx,hy,px*4,px*4);
+    ctx.fillRect(hx-px*0.5,hy+px*0.5,px*5,px*3);
+    ctx.fillRect(hx+px,hy-px,px*2,px);
+    // Ears
+    ctx.fillRect(hx-px*1.5,hy+px*0.5,px*2,px*2);
+    ctx.fillRect(hx+px*3.5,hy+px*0.5,px*2,px*2);
+    ctx.fillStyle=face;
+    ctx.fillRect(hx-px,hy+px,px,px);
+    ctx.fillRect(hx+px*4,hy+px,px,px);
+    // Face
+    ctx.fillRect(hx+px*0.5,hy+px*1.5,px*3,px*2.5);
+    ctx.fillRect(hx+px,hy+px*3,px*2,px*1.5);
+    // Eyes
+    const blink=(frame%100)>=97;
+    if(blink){ctx.fillStyle='#111';ctx.fillRect(hx+px*0.8,hy+px*2.1,px,px*0.3);ctx.fillRect(hx+px*2.8,hy+px*2.1,px,px*0.3);}
+    else{ctx.fillStyle='#fff';ctx.fillRect(hx+px*0.8,hy+px*1.8,px,px);ctx.fillRect(hx+px*2.8,hy+px*1.8,px,px);ctx.fillStyle='#331100';ctx.fillRect(hx+px*0.8,hy+px*2,px*0.5,px*0.5);ctx.fillRect(hx+px*2.8,hy+px*2,px*0.5,px*0.5);}
+    // Nostrils + mouth
+    ctx.fillStyle='#3a2010';
+    ctx.fillRect(hx+px*1.2,hy+px*3.3,px*0.4,px*0.3);
+    ctx.fillRect(hx+px*2.2,hy+px*3.3,px*0.4,px*0.3);
+    if(rxType==='complete'){ctx.fillStyle='#cc6666';ctx.fillRect(hx+px,hy+px*3.8,px*2,px*0.5);}
+    else if(rxType==='error'&&rxP<0.4){ctx.fillStyle='#111';ctx.fillRect(hx+px,hy+px*3.8,px*2,px*0.8);}
+    else{ctx.fillStyle='#3a2010';ctx.fillRect(hx+px*1.2,hy+px*3.8,px*1.5,px*0.2);}
+
+    // Arms
+    const ap=Math.sin(frame*0.3);
+    if(rxType==='error'&&rxP<0.5){
+        ctx.fillStyle=fur;ctx.fillRect(charX-px,charY-px*8,px*2,px*3);ctx.fillRect(charX+px*9,charY-px*8,px*2,px*3);
+        ctx.fillStyle=face;ctx.fillRect(charX-px,charY-px*8,px*1.5,px*1.5);ctx.fillRect(charX+px*9.5,charY-px*8,px*1.5,px*1.5);
+    } else if(rxType==='complete'&&rxP<0.6){
+        const au=Math.sin(rxP*Math.PI*4)*px*2;
+        ctx.fillStyle=fur;ctx.fillRect(charX-px,charY-px*7-Math.abs(au),px*2,px*3);ctx.fillRect(charX+px*9,charY-px*7-Math.abs(au),px*2,px*3);
+        ctx.fillStyle=face;ctx.fillRect(charX-px,charY-px*7-Math.abs(au),px*1.5,px*1.5);ctx.fillRect(charX+px*9.5,charY-px*7-Math.abs(au),px*1.5,px*1.5);
+    } else {
+        const ly=charY-px*4+breathY+(ap>0?-px:0), ry=charY-px*4+breathY+(ap>0?0:-px);
+        ctx.fillStyle=fur;ctx.fillRect(charX,ly,px*2,px*3);ctx.fillRect(charX+px*8,ry,px*2,px*3);
+        ctx.fillStyle=face;ctx.fillRect(charX-px*0.5,ly+px*2,px*1.5,px*1.5);ctx.fillRect(charX+px*9.5,ry+px*2,px*1.5,px*1.5);
+    }
+
+    // Keyboard
+    ctx.fillStyle='#3a3a44'; ctx.fillRect(charX-px,deskY-px*2,px*12,px*2);
+    for(let k=0;k<5;k++){
+        const ka=((k*7+Math.floor(frame*0.3))%5===0);
+        ctx.fillStyle=rxType==='error'?'#ff3333':rxType==='complete'?`hsl(${(k*60+frame*8)%360},80%,60%)`:ka?'#7a7a88':'#4a4a55';
+        ctx.fillRect(charX+k*px*2,deskY-px*2,px,px);
+    }
+
+    // Coffee
+    const mx=w*0.73;
+    ctx.fillStyle='#e0e0e0';ctx.fillRect(mx,deskY-px*4,px*3,px*3);
+    ctx.fillStyle='#8b4513';ctx.fillRect(mx+px*0.5,deskY-px*3.5,px*2,px*2);
+    ctx.fillStyle='#e0e0e0';ctx.fillRect(mx+px*3,deskY-px*3,px,px*2);
+    for(let s=0;s<3;s++){const sc=((frame*0.8+s*13)%40)/40;ctx.fillStyle=`rgba(200,200,200,${0.3*(1-sc)})`;ctx.fillRect(mx+px*(0.5+s*0.6)+Math.sin(frame*0.1+s)*px*0.5,deskY-px*5-sc*px*5,px*0.5,px*0.5);}
+
+    // Dust
+    for(let i=0;i<10;i++){const ps=(i*7)%1000;const sp=0.1+(ps%5)*0.05;ctx.fillStyle=`rgba(255,255,255,${0.03+(ps%10)*0.006})`;ctx.fillRect((ps+frame*sp*0.3)%w,((ps*3+frame*sp)%(h*0.7)),1+(ps%2),1+(ps%2));}
+
+    // Reactions
+    if(rxType==='complete'){
+        const cc=['#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff','#ff8800','#9146ff'];
+        for(let i=0;i<20;i++){const s=i*37+11;const x=(s*13)%w;const y=-px*2+(frame-rx.start)*( 1.5+(s%3))+Math.sin((frame-rx.start+s)*0.1)*px*3;if(y>h)continue;ctx.fillStyle=cc[i%cc.length];ctx.fillRect(x,y,px*(0.5+(s%3)*0.3),px*(0.5+(s%3)*0.3));}
+        // Sparkles
+        for(let i=0;i<6;i++){ctx.fillStyle=`rgba(255,215,0,${0.5+Math.sin(frame*0.5+i)*0.3})`;ctx.fillRect(charX+px*5+Math.sin(frame*0.3+i*0.8)*px*8,charY-px*14-Math.abs(Math.sin(frame*0.2+i))*px*6,px*0.5,px*0.5);}
+    }
+    if(rxType==='error'&&rxP<0.5){ctx.fillStyle='#ff4444';ctx.fillRect(charX+px*5,charY-px*16,px,px*3);ctx.fillRect(charX+px*5,charY-px*12,px,px);}
+    if(rxType==='spawn'){for(let r=0;r<3;r++){const rp=rxP-r*0.15;if(rp<0||rp>0.7)continue;ctx.strokeStyle=`rgba(145,70,255,${0.3*(1-rp/0.7)})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(charX+px*5,charY-px*6,rp*px*20,0,Math.PI*2);ctx.stroke();}}
+
+    frame++;
+    requestAnimationFrame(draw);
+}
+
+// Simulated chat
+const chatEl = document.getElementById('chat');
+const names = ['viewer_42','code_fan99','pixel_dev','stream_lurker','bug_hunter','git_pusher','regex_queen','null_ptr','vim_exit','tab_hoarder'];
+const colors = ['#9146ff','#00b4d8','#f0c674','#00e676','#ff6b6b','#81d4fa','#e74c3c','#8abeb7'];
+const badges = {spawn:'🟣',think:'🧠',bash:'⚡',error:'🔴',file_update:'✏️',file_create:'📝',complete:'✅',user:'👤'};
+
+const agentMsgs = [
+    {type:'spawn',name:'claude-main',text:'spawns → working on feature'},
+    {type:'think',name:'claude-main',text:'analyzing codebase structure...'},
+    {type:'bash',name:'claude-main',text:'$ npm test -- --coverage'},
+    {type:'file_update',name:'claude-main',text:'edits src/app.ts'},
+    {type:'file_create',name:'claude-main',text:'creates src/utils.ts'},
+    {type:'think',name:'claude-main',text:'considering edge cases...'},
+    {type:'bash',name:'claude-main',text:'$ git diff --stat'},
+    {type:'file_update',name:'claude-main',text:'edits src/index.ts'},
+    {type:'complete',name:'claude-main',text:'task complete!'},
+    {type:'error',name:'claude-main',text:'ERROR: test assertion failed'},
+    {type:'think',name:'claude-main',text:'debugging the failure...'},
+    {type:'file_update',name:'claude-main',text:'edits src/app.ts'},
+    {type:'bash',name:'claude-main',text:'$ npm test'},
+    {type:'complete',name:'claude-main',text:'all tests passing!'},
+];
+
+const viewerMsgs = [
+    'LFG 🔥','this is clean','sheeeesh','nice','W','lets goooo','clean af',
+    'that refactor tho','ship it!','no bugs pls','O(n) gang',
+    'what lang is this?','LGTM','needs more comments','🚀🚀🚀',
+    'built different','just use a hashmap','edge case alert 🚨',
+];
+
+let msgIdx = 0;
+let goalTok = 5000;
+
+function addChat(html) {
+    const d = document.createElement('div');
+    d.className = 'chat-msg';
+    d.innerHTML = html;
+    chatEl.appendChild(d);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    // Keep last 30 messages
+    while (chatEl.children.length > 30) chatEl.removeChild(chatEl.firstChild);
+}
+
+function addTip() {
+    const n = names[Math.floor(Math.random()*names.length)];
+    const c = colors[Math.floor(Math.random()*colors.length)];
+    const amt = [100,250,500,1000,2500][Math.floor(Math.random()*5)];
+    const msgs = ['Keep it up!','For the coffee fund ☕','Love the stream!','Ship it! 🚀','💜'];
+    const m = msgs[Math.floor(Math.random()*msgs.length)];
+    goalTok += amt;
+    const d = document.createElement('div');
+    d.className = 'chat-msg tip';
+    d.innerHTML = `<span class="badge">💎</span><span class="name" style="color:${c}">${n}</span><span class="tip-amt">${amt} tokens</span> ${m}`;
+    chatEl.appendChild(d);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    // Streamer reply
+    setTimeout(() => {
+        const replies = amt >= 1000 ? ['OMG thank you!! 😭','HUGE!! 🙏'] : ['Thanks! 💜','Ty! 🎉','Ayy thanks! 🔥'];
+        addChat(`<span class="badge">🐵</span><span class="name" style="color:#9146ff">claude-main</span>${replies[Math.floor(Math.random()*replies.length)]}`);
+    }, 800);
+    document.getElementById('goal').style.width = Math.min(100, goalTok/50000*100)+'%';
+}
+
+function nextEvent() {
+    const evt = agentMsgs[msgIdx % agentMsgs.length];
+    msgIdx++;
+    const badge = badges[evt.type] || '·';
+    const tok = Math.floor(Math.random()*2000);
+    const tokHtml = tok > 500 ? `<span class="tok">+${(tok/1000).toFixed(1)}k</span>` : '';
+    addChat(`<span class="badge">${badge}</span><span class="name" style="color:#9146ff">${evt.name}</span>${evt.text}${tokHtml}`);
+    goalTok += tok;
+    document.getElementById('goal').style.width = Math.min(100, goalTok/50000*100)+'%';
+
+    reaction = { type: evt.type, start: frame, dur: evt.type==='complete'?90:evt.type==='error'?80:evt.type==='spawn'?60:30 };
+}
+
+function viewerChat() {
+    const n = names[Math.floor(Math.random()*names.length)];
+    const c = colors[Math.floor(Math.random()*colors.length)];
+    const m = viewerMsgs[Math.floor(Math.random()*viewerMsgs.length)];
+    addChat(`<span class="badge">💬</span><span class="name" style="color:${c}">${n}</span>${m}`);
+}
+
+// Stagger events
+setInterval(nextEvent, 3000);
+setInterval(viewerChat, 5000);
+setInterval(() => { if (Math.random() < 0.3) addTip(); }, 8000);
+
+// Like button
+let likes = 42;
+document.getElementById('likeBtn').onclick = () => {
+    likes++;
+    document.getElementById('likeBtn').textContent = '♥ ' + likes;
+    document.getElementById('likeBtn').classList.add('liked');
+};
+
+document.getElementById('goal').style.width = '10%';
+nextEvent();
+draw();
+</script>
+</body></html>
