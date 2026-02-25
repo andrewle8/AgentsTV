@@ -114,15 +114,10 @@ export function drawPixelScene(canvas, seed, frame, isLarge) {
     ctx.fillStyle = palette.chair;
     ctx.fillRect(charX - px, charY - px * 3, px * 12, px * 6);
 
-    if (viewAngle === 2) {
-        // Front view: monitors behind, character in front
-        drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas);
-        drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult, viewAngle);
-    } else {
-        // Back/side view: character behind monitors
-        drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult, viewAngle);
-        drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas);
-    }
+    // Always draw monitors first, then character on top — the character
+    // sits between the viewer and the monitor in all camera angles.
+    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas, viewAngle);
+    drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult, viewAngle);
 
     // Keyboard
     ctx.fillStyle = '#3a3a44';
@@ -250,15 +245,16 @@ export function drawPixelScene(canvas, seed, frame, isLarge) {
 // MONITOR SETUP
 // ============================================================
 
-function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas) {
+function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas, viewAngle) {
     const scrollSpeed = 0.5 * typingMult;
     const mc = canvas && canvas._monitorContent;
+    const showBack = (viewAngle === 2); // front view: we see the back of the monitor
 
     if (setup === 'dual') {
-        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
-        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress, false, null);
+        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
+        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress, false, null, showBack);
     } else if (setup === 'ultrawide') {
-        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
+        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
     } else if (setup === 'laptop') {
         const lx = w * 0.32;
         const ly = deskY - px * 14;
@@ -266,57 +262,78 @@ function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxT
         const lh = px * 12;
         ctx.fillStyle = '#3a3a44';
         ctx.fillRect(lx - px, deskY - px * 2, lw + px * 2, px * 2);
-        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
+        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
     } else if (setup === 'triple') {
-        drawMonitor(ctx, w * 0.12, deskY - px * 17, px * 14, px * 13, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
-        drawMonitor(ctx, w * 0.36, deskY - px * 17, px * 14, px * 13, px, palette, seed + 7, frame, scrollSpeed * 0.7, rxType, rxProgress, false, null);
-        drawMonitor(ctx, w * 0.60, deskY - px * 17, px * 14, px * 13, px, palette, seed + 13, frame, scrollSpeed * 0.5, rxType, rxProgress, false, null);
+        drawMonitor(ctx, w * 0.12, deskY - px * 17, px * 14, px * 13, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
+        drawMonitor(ctx, w * 0.36, deskY - px * 17, px * 14, px * 13, px, palette, seed + 7, frame, scrollSpeed * 0.7, rxType, rxProgress, false, null, showBack);
+        drawMonitor(ctx, w * 0.60, deskY - px * 17, px * 14, px * 13, px, palette, seed + 13, frame, scrollSpeed * 0.5, rxType, rxProgress, false, null, showBack);
     } else if (setup === 'stacked') {
-        drawMonitor(ctx, w * 0.28, deskY - px * 16, px * 28, px * 12, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
-        drawMonitor(ctx, w * 0.32, deskY - px * 28, px * 22, px * 10, px, palette, seed + 5, frame, scrollSpeed * 0.6, rxType, rxProgress, false, null);
+        drawMonitor(ctx, w * 0.28, deskY - px * 16, px * 28, px * 12, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
+        drawMonitor(ctx, w * 0.32, deskY - px * 28, px * 22, px * 10, px, palette, seed + 5, frame, scrollSpeed * 0.6, rxType, rxProgress, false, null, showBack);
     } else {
-        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
+        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc, showBack);
     }
 }
 
-function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, monitorContent) {
+function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, monitorContent, showBack) {
+    // Bezel / frame
     ctx.fillStyle = '#2c2c34';
     ctx.fillRect(monX - px, monY - px, monW + px * 2, monH + px * 2);
 
-    let screenColor = palette.monitor;
-    if (rxType === 'error' && rxProgress < 0.5) {
-        screenColor = (Math.floor(rxProgress * 10) % 2 === 0) ? '#0000aa' : palette.monitor;
-    }
-    ctx.fillStyle = screenColor;
-    ctx.fillRect(monX, monY, monW, monH);
-
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    for (let y = monY; y < monY + monH; y += px * 2) {
-        ctx.fillRect(monX, y, monW, 1);
-    }
-
-    if (rxType === 'error' && rxProgress < 0.5) {
-        drawErrorScreen(ctx, monX, monY, monW, monH, px, rxProgress);
-        ctx.fillStyle = '#ff4444';
-        ctx.fillRect(monX + monW / 2 - px, monY + monH - px * 4, px * 2, px * 2);
-    } else if (rxType === 'think') {
-        drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
+    if (showBack) {
+        // Front view — we see the rear of the monitor casing
+        ctx.fillStyle = '#222230';
+        ctx.fillRect(monX, monY, monW, monH);
+        // Vents on the back panel
+        ctx.fillStyle = '#1a1a28';
+        for (let vy = monY + px * 3; vy < monY + monH - px * 2; vy += px * 2) {
+            ctx.fillRect(monX + px * 3, vy, monW - px * 6, px * 0.5);
+        }
+        // Small manufacturer logo circle
+        ctx.fillStyle = '#2a2a3a';
+        const cx = monX + monW / 2;
+        const cy = monY + monH / 2;
+        ctx.fillRect(cx - px, cy - px, px * 2, px * 2);
     } else {
-        const mc = monitorContent || (isLarge ? state.monitorContent : null);
-        const mcText = mc ? (mc._text || mc) : null;
-        const mcType = mc ? (monitorContent ? monitorContent._type : state.monitorContentType) : null;
-        if (mcText && typeof mcText === 'string' && mcText.length > 10) {
-            drawRealCodeSession(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, mcText, mcType);
+        // Back/side view — we see the screen
+        let screenColor = palette.monitor;
+        if (rxType === 'error' && rxProgress < 0.5) {
+            screenColor = (Math.floor(rxProgress * 10) % 2 === 0) ? '#0000aa' : palette.monitor;
+        }
+        ctx.fillStyle = screenColor;
+        ctx.fillRect(monX, monY, monW, monH);
+
+        // Scanlines
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        for (let y = monY; y < monY + monH; y += px * 2) {
+            ctx.fillRect(monX, y, monW, 1);
+        }
+
+        if (rxType === 'error' && rxProgress < 0.5) {
+            drawErrorScreen(ctx, monX, monY, monW, monH, px, rxProgress);
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(monX + monW / 2 - px, monY + monH - px * 4, px * 2, px * 2);
+        } else if (rxType === 'think') {
+            drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
         } else {
-            drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
+            const mc = monitorContent || (isLarge ? state.monitorContent : null);
+            const mcText = mc ? (mc._text || mc) : null;
+            const mcType = mc ? (monitorContent ? monitorContent._type : state.monitorContentType) : null;
+            if (mcText && typeof mcText === 'string' && mcText.length > 10) {
+                drawRealCodeSession(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, mcText, mcType);
+            } else {
+                drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
+            }
+        }
+
+        // Subtle screen flicker
+        if (frame % 90 < 2) {
+            ctx.fillStyle = 'rgba(255,255,255,0.03)';
+            ctx.fillRect(monX, monY, monW, monH);
         }
     }
 
-    if (frame % 90 < 2) {
-        ctx.fillStyle = 'rgba(255,255,255,0.03)';
-        ctx.fillRect(monX, monY, monW, monH);
-    }
-
+    // Stand
     ctx.fillStyle = '#2c2c34';
     const standX = monX + monW / 2;
     ctx.fillRect(standX - px * 2, monY + monH + px, px * 4, px * 2);
