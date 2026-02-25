@@ -107,6 +107,8 @@ export function renderDashboard() {
     if (!state.sessions.length) {
         grid.innerHTML = '';
         empty.style.display = 'flex';
+        const emptyCanvas = document.getElementById('empty-canvas');
+        if (emptyCanvas) startPixelAnimation(emptyCanvas, 42, false);
         return;
     }
     empty.style.display = 'none';

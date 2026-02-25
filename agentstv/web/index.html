@@ -37,7 +37,36 @@
             </div>
             <div id="session-grid" class="session-grid"></div>
             <div id="no-sessions" class="empty-state" style="display:none">
-                No streams found — waiting for agents in ~/.claude/projects/
+                <div class="empty-hero">
+                    <canvas id="empty-canvas" class="empty-canvas" width="320" height="180"></canvas>
+                    <div class="empty-badge">OFFLINE</div>
+                </div>
+                <h2 class="empty-title">No streams yet</h2>
+                <p class="empty-subtitle">Start a Claude Code session and it'll appear here automatically</p>
+                <div class="empty-steps">
+                    <div class="empty-step">
+                        <span class="empty-step-num">1</span>
+                        <div class="empty-step-text">
+                            <strong>Install &amp; run AgentsTV</strong>
+                            <code>pip install agent-replay &amp;&amp; python -m agentstv</code>
+                        </div>
+                    </div>
+                    <div class="empty-step">
+                        <span class="empty-step-num">2</span>
+                        <div class="empty-step-text">
+                            <strong>Start a Claude Code session</strong>
+                            <code>claude</code>
+                        </div>
+                    </div>
+                    <div class="empty-step">
+                        <span class="empty-step-num">3</span>
+                        <div class="empty-step-text">
+                            <strong>Watch it live</strong>
+                            <span class="empty-hint">Your agent appears as a stream — chat, react, replay</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="empty-waiting">👁 Watching for sessions in <code>~/.claude/projects/</code></p>
             </div>
         </div>
 

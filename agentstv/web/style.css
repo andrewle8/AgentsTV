@@ -274,11 +274,120 @@ body {
 
 .empty-state {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     flex: 1;
     color: var(--text-muted);
     font-size: 14px;
+    padding: 40px 20px;
+    gap: 8px;
+    text-align: center;
+}
+.empty-hero {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    margin-bottom: 8px;
+}
+.empty-canvas {
+    display: block;
+    border-radius: 10px;
+    image-rendering: pixelated;
+}
+.empty-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(80, 80, 80, 0.8);
+    color: #aaa;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+.empty-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 8px 0 0;
+}
+.empty-subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0 0 16px;
+    max-width: 360px;
+}
+.empty-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+    max-width: 400px;
+    width: 100%;
+}
+.empty-step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.empty-step-num {
+    background: var(--purple);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.empty-step-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+.empty-step-text strong {
+    color: var(--text);
+    font-weight: 600;
+}
+.empty-step-text code {
+    background: var(--bg-surface2);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--purple-light, #b380ff);
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+.empty-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.empty-waiting {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    animation: emptyPulse 2s ease-in-out infinite;
+}
+.empty-waiting code {
+    background: var(--bg-surface2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+@keyframes emptyPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
 }
 
 .dim { color: var(--text-muted); font-weight: normal; font-size: 12px; }
