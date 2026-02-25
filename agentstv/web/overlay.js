@@ -243,7 +243,7 @@ async function init() {
         // Start pixel art
         if (config.webcam) {
             const canvas = document.getElementById('webcam-canvas');
-            const seed = hashCode(config.sessionId) % PALETTES.length;
+            const seed = hashCode(config.sessionId);
             startPixelAnimation(canvas, seed, true);
         }
 

@@ -169,6 +169,15 @@ export async function showSessionView(filePath) {
             return;
         }
         state.session = data;
+        const avatarEmojis = ['\uD83D\uDC12', '\uD83E\uDD8A', '\uD83D\uDC31', '\uD83D\uDC3B', '\uD83D\uDC3C', '\uD83E\uDD81', '\uD83D\uDC28', '\uD83D\uDC38', '\uD83D\uDC30', '\uD83D\uDC36', '\uD83E\uDD89', '\uD83D\uDC27', '\uD83D\uDC39', '\uD83E\uDD9D'];
+        const avatarBgs = ['var(--purple)', '#e91e63', '#00bcd4', '#4caf50', '#ff9800', '#9c27b0', '#2196f3', '#f44336', '#795548', '#607d8b', '#009688', '#ff5722'];
+        const pName = data.slug || data.project_name || '';
+        const avatarEl = document.getElementById('streamer-avatar');
+        if (avatarEl && pName) {
+            const h = hashCode(pName);
+            avatarEl.textContent = avatarEmojis[h % avatarEmojis.length];
+            avatarEl.style.background = avatarBgs[h % avatarBgs.length];
+        }
         initFilters();
         renderSession();
         setupScrollListener();
@@ -176,7 +185,7 @@ export async function showSessionView(filePath) {
         startUptimeTimer(data);
 
         const canvas = document.getElementById('webcam-canvas');
-        const seed = hashCode(filePath) % PALETTES.length;
+        const seed = hashCode(filePath);
         startPixelAnimation(canvas, seed, true);
         syncLlmToggleUI();
         if (state.llmEnabled) startViewerChat();

@@ -140,9 +140,12 @@ body {
     cursor: pointer;
     border-radius: 4px;
     overflow: hidden;
-    transition: transform 0.15s;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.channel-card:hover { transform: translateY(-2px); }
+.channel-card:hover {
+    transform: scale(1.02) translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
 
 .channel-thumb {
     position: relative;
@@ -896,7 +899,22 @@ body {
 /* Master channel card on dashboard */
 .channel-card.master-card {
     grid-column: 1 / -1;
+    position: relative;
     border: 2px solid var(--purple);
+}
+.channel-card.master-card::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--purple), var(--gold), var(--purple));
+    background-size: 200% 200%;
+    animation: masterShimmer 3s linear infinite;
+    z-index: -1;
+}
+@keyframes masterShimmer {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
 }
 .channel-card.master-card .channel-thumb {
     aspect-ratio: 21/6;
@@ -1604,6 +1622,49 @@ select.settings-input { cursor: pointer; }
 }
 .channel-thumb:hover .replay-card-btn { opacity: 1; }
 .replay-card-btn:hover { background: var(--purple); }
+
+/* Live card glow */
+.channel-card:has(.live-pill) {
+    border: 1px solid rgba(235, 4, 0, 0.3);
+}
+.channel-card:has(.live-pill):hover {
+    box-shadow: 0 8px 24px rgba(235, 4, 0, 0.2);
+}
+
+/* Offline card subtle dim */
+.channel-card:has(.offline-pill) {
+    opacity: 0.88;
+}
+.channel-card:has(.offline-pill):hover {
+    opacity: 1;
+}
+
+/* Live avatar pulse */
+.channel-avatar.is-live {
+    animation: avatarPulse 2s ease-in-out infinite;
+}
+@keyframes avatarPulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--red); }
+    50% { box-shadow: 0 0 0 4px var(--red), 0 0 12px rgba(235, 4, 0, 0.3); }
+}
+
+/* Tag color variants */
+.tag-branch { background: rgba(100, 181, 246, 0.15); color: var(--blue); }
+.tag-agents { background: rgba(145, 70, 255, 0.15); color: var(--purple-light); }
+.tag-events { background: rgba(0, 230, 118, 0.12); color: var(--green-dim); }
+
+/* Button enhancements */
+.tip-btn {
+    background: linear-gradient(135deg, var(--tip-blue), #0096b7);
+}
+.tip-btn:hover {
+    background: linear-gradient(135deg, #0096b7, var(--tip-blue));
+    transform: scale(1.03);
+}
+.like-btn:active .heart {
+    transform: scale(1.4);
+    transition: transform 0.1s;
+}
 
 /* Responsive */
 @media (max-width: 900px) {

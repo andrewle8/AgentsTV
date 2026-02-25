@@ -1,7 +1,7 @@
 /* AgentsTV — dashboard / browse channels view */
 
 import { state } from './state.js';
-import { esc, formatTimeAgo } from './utils.js';
+import { esc, formatTimeAgo, hashCode } from './utils.js';
 import { startPixelAnimation, stopAllAnimations } from './pixelEngine.js';
 
 // ============================================================
@@ -117,6 +117,8 @@ export function renderDashboard() {
     const sortMode = sortSelect ? sortSelect.value : 'recent';
     const filtered = filterSessions(state.sessions, query);
     const groups = consolidateSessions(filtered, sortMode);
+    const avatarEmojis = ['\uD83D\uDC12', '\uD83E\uDD8A', '\uD83D\uDC31', '\uD83D\uDC3B', '\uD83D\uDC3C', '\uD83E\uDD81', '\uD83D\uDC28', '\uD83D\uDC38', '\uD83D\uDC30', '\uD83D\uDC36', '\uD83E\uDD89', '\uD83D\uDC27', '\uD83D\uDC39', '\uD83E\uDD9D'];
+    const avatarBgs = ['var(--purple)', '#e91e63', '#00bcd4', '#4caf50', '#ff9800', '#9c27b0', '#2196f3', '#f44336', '#795548', '#607d8b', '#009688', '#ff5722'];
     document.getElementById('channel-count').textContent = `(${groups.length} channels)`;
 
     const activeCount = groups.filter(g => g.hasActive).length;
@@ -151,8 +153,8 @@ export function renderDashboard() {
         const countBadge = g.count > 1
             ? `<span class="session-count-badge">${g.count} sessions</span>`
             : '';
-        const branchTag = s.branch ? `<span class="tag">\u23C7 ${esc(s.branch)}</span>` : '';
-        const agentTag = `<span class="tag">\u2605 ${s.agent_count} agent${s.agent_count !== 1 ? 's' : ''}</span>`;
+        const branchTag = s.branch ? `<span class="tag tag-branch">\u23C7 ${esc(s.branch)}</span>` : '';
+        const agentTag = `<span class="tag tag-agents">\u2605 ${s.agent_count} agent${s.agent_count !== 1 ? 's' : ''}</span>`;
 
         return `
         <div class="channel-card" data-path="${esc(s.file_path)}" data-idx="${idx}">
@@ -164,7 +166,7 @@ export function renderDashboard() {
                 <button class="replay-card-btn" data-replay-path="${esc(s.file_path)}" title="Replay session">&#x25B6; Replay</button>
             </div>
             <div class="channel-info">
-                <div class="${avatarClass}">\uD83D\uDC12</div>
+                <div class="${avatarClass}" style="background:${avatarBgs[hashCode(s.project_name || '') % avatarBgs.length]}">${avatarEmojis[hashCode(s.project_name || '') % avatarEmojis.length]}</div>
                 <div class="channel-text">
                     <div class="channel-name">${esc(s.project_name)}${countBadge}</div>
                     <div class="channel-category">Coding \u00b7 ${esc(s.slug || 'Claude Code')}</div>
@@ -193,11 +195,13 @@ export function renderDashboard() {
     });
 
     grid.querySelectorAll('.channel-thumb canvas').forEach(canvas => {
-        const seed = canvas.dataset.seed;
-        if (seed === 'master') {
+        const seedVal = canvas.dataset.seed;
+        if (seedVal === 'master') {
             startPixelAnimation(canvas, 99, false);
         } else {
-            startPixelAnimation(canvas, parseInt(seed) || 0, false);
+            const g = groups[parseInt(seedVal) || 0];
+            const thumbSeed = g ? hashCode(g.latest.project_name) : parseInt(seedVal) || 0;
+            startPixelAnimation(canvas, thumbSeed, false);
         }
     });
 
