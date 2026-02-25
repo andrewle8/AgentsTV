@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.0
+
+### Visual Overhaul
+- Expand pixel art palettes from 6 to 16 with varied fur/shirt/chair colors
+- Add 7 desk items (plant, figure, mug, lamp, photo, headphones, book stack)
+- Add 2 monitor setups (stacked, laptop) and character accessories (hat, glasses, headphones, beanie, bowtie, bandana)
+- Add 5 window scenes (rain, cityscape, sunset, forest, space)
+- Add 3 idle animations (yawn, nod, phone check)
+- Fix pixel art z-ordering: character always drawn in front of monitor
+- Front view now shows realistic monitor back panel instead of screen
+- Polish empty state with animated pixel art canvas, getting-started steps, and pulsing status
+
 ## v0.5.0
 
 ### New Features
