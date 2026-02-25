@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -10,6 +11,7 @@ from .models import Agent, Event, EventType, Session
 
 # Parse cache: keyed on (resolved_path, mtime) -> Session
 _parse_cache: Dict[Tuple[str, float], Session] = {}
+_parse_cache_lock = threading.Lock()
 _PARSE_CACHE_MAX = 64
 
 # Agent colors assigned round-robin to sub-agents
@@ -100,9 +102,10 @@ def parse(file_path: str | Path) -> Session:
         mtime = 0.0
     key = (str(p), mtime)
 
-    cached = _parse_cache.get(key)
-    if cached is not None:
-        return cached
+    with _parse_cache_lock:
+        cached = _parse_cache.get(key)
+        if cached is not None:
+            return cached
 
     fmt = auto_detect(file_path)
     if fmt == "claude_code":
@@ -112,15 +115,16 @@ def parse(file_path: str | Path) -> Session:
     else:
         session = parse_codex(file_path)
 
-    # Evict stale entries for the same path (old mtimes)
-    stale_keys = [k for k in _parse_cache if k[0] == str(p) and k[1] != mtime]
-    for sk in stale_keys:
-        del _parse_cache[sk]
-    # Evict oldest entry if cache is still full
-    if len(_parse_cache) >= _PARSE_CACHE_MAX:
-        oldest = next(iter(_parse_cache))
-        del _parse_cache[oldest]
-    _parse_cache[key] = session
+    with _parse_cache_lock:
+        # Evict stale entries for the same path (old mtimes)
+        stale_keys = [k for k in _parse_cache if k[0] == str(p) and k[1] != mtime]
+        for sk in stale_keys:
+            del _parse_cache[sk]
+        # Evict oldest entry if cache is still full
+        if len(_parse_cache) >= _PARSE_CACHE_MAX:
+            oldest = next(iter(_parse_cache))
+            del _parse_cache[oldest]
+        _parse_cache[key] = session
     return session
 
 
@@ -549,19 +553,20 @@ def _read_jsonl(path: Path) -> list[dict]:
     _log = logging.getLogger(__name__)
     records = []
     bad_lines = 0
-    for line_num, line in enumerate(open(path, encoding="utf-8"), 1):
-        if line_num > MAX_JSONL_LINES:
-            _log.warning("Truncated %s at %d lines (max %d)", path.name, line_num - 1, MAX_JSONL_LINES)
-            break
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            records.append(json.loads(line))
-        except json.JSONDecodeError:
-            bad_lines += 1
-            _log.debug("Bad JSON at %s:%d", path.name, line_num)
-            continue
+    with open(path, encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            if line_num > MAX_JSONL_LINES:
+                _log.warning("Truncated %s at %d lines (max %d)", path.name, line_num - 1, MAX_JSONL_LINES)
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                bad_lines += 1
+                _log.debug("Bad JSON at %s:%d", path.name, line_num)
+                continue
     if bad_lines:
         _log.warning("Skipped %d malformed lines in %s", bad_lines, path.name)
     return records

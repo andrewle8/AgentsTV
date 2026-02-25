@@ -168,7 +168,8 @@ function playCurrentEvent() {
     updateChatCounters(replaySession);
     renderMods(replaySession);
     renderDonationGoal();
-    document.getElementById('session-meta').textContent = buildStreamTitle(replaySession);
+    const metaEl = document.getElementById('session-meta');
+    if (metaEl) metaEl.textContent = buildStreamTitle(replaySession);
 
     if (state.autoScroll && log) {
         log.scrollTop = log.scrollHeight;

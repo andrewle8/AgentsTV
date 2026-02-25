@@ -54,7 +54,8 @@ function connectDashboardWS() {
         statusEl, null
     );
     ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
         if (msg.type === 'sessions') {
             state.sessions = msg.data;
             renderDashboard();

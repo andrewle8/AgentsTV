@@ -103,7 +103,7 @@ export function appendChatMessage(log, evt, s, isMaster, evtIndex) {
     const agentName = agent ? agent.name : (isMaster && evt.project ? `${evt.project}/${evt.agent_id}` : evt.agent_id);
     const agentColor = agent ? agent.color : 'white';
     const isSubagent = agent ? agent.is_subagent : false;
-    const totalTok = evt.input_tokens + evt.output_tokens;
+    const totalTok = (evt.input_tokens || 0) + (evt.output_tokens || 0);
 
     const projColor = isMaster ? getProjectColor(evt.project) : null;
 
@@ -270,7 +270,7 @@ export function renderViewerCount() {
 export function renderDonationGoal() {
     const s = state.session;
     if (!s) return;
-    const agents = Object.values(s.agents);
+    const agents = Object.values(s.agents || {});
     const totalIn = agents.reduce((sum, a) => sum + a.input_tokens, 0);
     const totalOut = agents.reduce((sum, a) => sum + a.output_tokens, 0);
     const totalCache = agents.reduce((sum, a) => sum + a.cache_read_tokens, 0);
@@ -287,7 +287,7 @@ export function renderDonationGoal() {
 
 export function renderMods(s) {
     const panel = document.getElementById('agents-panel');
-    panel.innerHTML = Object.values(s.agents).map(a => {
+    panel.innerHTML = Object.values(s.agents || {}).map(a => {
         const total = a.input_tokens + a.output_tokens;
         const tokStr = total > 0 ? fmtTokens(total) : '';
         const badge = a.is_subagent ? '🗡' : '👑';
@@ -926,8 +926,8 @@ function getFollowKey(filePath) { return 'agenttv_follow_' + hashCode(filePath);
 
 export function loadPersistedState(filePath) {
     try {
-        state.tips = parseInt(localStorage.getItem(getTipKey(filePath)) || '0');
-        state.likes = parseInt(localStorage.getItem(getLikeKey(filePath)) || '0');
+        state.tips = parseInt(localStorage.getItem(getTipKey(filePath)) || '0', 10) || 0;
+        state.likes = parseInt(localStorage.getItem(getLikeKey(filePath)) || '0', 10) || 0;
         state.following = localStorage.getItem(getFollowKey(filePath)) === '1';
     } catch (e) { /* localStorage unavailable */ }
 }

@@ -7,13 +7,14 @@ import asyncio
 import hashlib
 import logging
 import os
+import random
 import re
 import sys
-import webbrowser
-from pathlib import Path
-
 import time
+import webbrowser
 from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -22,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, llm
 from .parser import parse
-from .scanner import scan_sessions
+from .scanner import scan_sessions, _DEFAULT_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,12 @@ _RATE_LIMIT_WINDOW = 60  # seconds
 _RATE_LIMIT_MAX = 30  # requests per window
 
 
+_rate_limit_cleanup_counter = 0
+
+
 def _check_rate_limit(client_ip: str) -> bool:
     """Return True if the request is within rate limits."""
+    global _rate_limit_cleanup_counter
     now = time.time()
     timestamps = _rate_limits.get(client_ip, [])
     # Prune old entries
@@ -67,6 +72,13 @@ def _check_rate_limit(client_ip: str) -> bool:
         return False
     timestamps.append(now)
     _rate_limits[client_ip] = timestamps
+    # Periodic global cleanup every 100 requests
+    _rate_limit_cleanup_counter += 1
+    if _rate_limit_cleanup_counter >= 100:
+        _rate_limit_cleanup_counter = 0
+        stale = [k for k, v in _rate_limits.items() if not v or all(now - t >= _RATE_LIMIT_WINDOW for t in v)]
+        for k in stale:
+            del _rate_limits[k]
     return True
 
 # Patterns that look like secrets
@@ -163,17 +175,19 @@ async def _resolve_session_path(session_id: str) -> Path | None:
     if not file_path.exists():
         return None
 
-    # Path traversal guard: resolved path must be under DATA_DIR
-    if DATA_DIR is not None:
-        try:
-            resolved = file_path.resolve()
-            allowed = DATA_DIR.resolve()
-            if not resolved.is_relative_to(allowed):
-                logger.warning("Path traversal blocked: %s is not under %s", resolved, allowed)
-                return None
-        except (OSError, ValueError) as exc:
-            logger.warning("Path validation failed for %s: %s", file_path, exc)
+    # Path traversal guard: resolved path must be under allowed directories
+    try:
+        resolved = file_path.resolve()
+        if DATA_DIR is not None:
+            allowed_roots = [DATA_DIR.resolve()]
+        else:
+            allowed_roots = [src[0].resolve() for src in _DEFAULT_SOURCES if src[0].is_dir()]
+        if not any(resolved.is_relative_to(root) for root in allowed_roots):
+            logger.warning("Path traversal blocked: %s is not under any allowed directory", resolved)
             return None
+    except (OSError, ValueError) as exc:
+        logger.warning("Path validation failed for %s: %s", file_path, exc)
+        return None
 
     return file_path
 
@@ -199,13 +213,17 @@ async def get_ollama_models():
 @app.post("/api/chat")
 async def post_chat(request: Request):
     """Interactive chat — user asks a question about agent activity."""
-    if not _check_rate_limit(request.client.host):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
     if llm.LLM_PROVIDER == "off":
         return {"error": "LLM is disabled"}
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
     user_message = body.get("message", "").strip()
     session_id = body.get("session_id", "")
     reply_to_index = body.get("reply_to_event_index")
@@ -235,7 +253,7 @@ async def post_chat(request: Request):
         try:
             file_path = await _resolve_session_path(session_id)
             if file_path:
-                session = parse(file_path)
+                session = await asyncio.to_thread(parse, file_path)
                 session_data = _redact_session(session.to_dict())
                 context = _build_context(session_data, n=8)
                 # Extract specific event if replying to one
@@ -267,13 +285,19 @@ async def get_settings():
 
 @app.put("/api/settings")
 async def put_settings(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
 
-    # Validate Ollama URL format
+    # Validate Ollama URL format and restrict to loopback
     ollama_url = body.get("ollama_url")
     if ollama_url is not None:
         if not isinstance(ollama_url, str) or not ollama_url.startswith(("http://", "https://")):
             return JSONResponse({"error": "Invalid Ollama URL — must start with http:// or https://"}, status_code=400)
+        parsed_url = urlparse(ollama_url)
+        if parsed_url.hostname not in ("localhost", "127.0.0.1", "::1", None):
+            return JSONResponse({"error": "Ollama URL must point to localhost"}, status_code=400)
 
     # Validate API key lengths
     for key_name in ("openai_key", "anthropic_key"):
@@ -324,8 +348,8 @@ async def get_session(session_id: str):
     """Parse and return a full session by file path (base64 or direct)."""
     file_path = await _resolve_session_path(session_id)
     if not file_path:
-        return {"error": "Session not found"}
-    session = parse(file_path)
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    session = await asyncio.to_thread(parse, file_path)
     return _redact_session(session.to_dict())
 
 
@@ -378,7 +402,6 @@ def _build_context(session_data: dict, n: int = 5) -> str:
         lines.append(" ".join(parts))
     if lines:
         return "\n".join(lines)
-    import random
     names = ["The coder", "Our code monkey", "The engineer", "Master coder", "The dev"]
     return f"{random.choice(names)} is working on a project."
 
@@ -400,7 +423,6 @@ async def _is_session_active(session_id: str) -> bool:
 @app.get("/api/viewer-chat/{session_id:path}")
 async def viewer_chat(session_id: str):
     """Return a generated viewer chat message for the session."""
-    import random
 
     # Skip LLM for inactive sessions — return empty so client uses fallback
     if not await _is_session_active(session_id):
@@ -426,7 +448,7 @@ async def viewer_chat(session_id: str):
         else:
             file_path = await _resolve_session_path(session_id)
             if file_path:
-                session = parse(file_path)
+                session = await asyncio.to_thread(parse, file_path)
                 context = _build_context(
                     _redact_session(session.to_dict())
                 )
@@ -467,12 +489,14 @@ async def viewer_chat(session_id: str):
 @app.post("/api/viewer-react")
 async def viewer_react(request: Request):
     """Generate 1-2 viewer reactions to a user's chat message."""
-    if not _check_rate_limit(request.client.host):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
-    import random
-
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
     user_message = body.get("message", "").strip()
     if not user_message:
         return {"reactions": []}
@@ -511,7 +535,7 @@ async def narrator_chat(session_id: str):
     try:
         file_path = await _resolve_session_path(session_id)
         if file_path:
-            session = parse(file_path)
+            session = await asyncio.to_thread(parse, file_path)
             context = _build_context(
                 _redact_session(session.to_dict()), n=10
             )
@@ -550,7 +574,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
         return
 
     # Send initial full state
-    session = parse(file_path)
+    session = await asyncio.to_thread(parse, file_path)
     data = _redact_session(session.to_dict())
     await websocket.send_json({"type": "full", "data": data})
     last_count = len(session.events)
@@ -568,7 +592,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
             current_hash = _file_hash(file_path)
             if current_hash != last_hash:
                 last_hash = current_hash
-                session = parse(file_path)
+                session = await asyncio.to_thread(parse, file_path)
                 if len(session.events) > last_count:
                     new_events = [_redact_event(e.to_dict()) for e in session.events[last_count:]]
                     agents = {k: v.to_dict() for k, v in session.agents.items()}
@@ -609,7 +633,7 @@ async def get_master():
 
     for proj, fpath in original_paths.items():
         try:
-            session = parse(Path(fpath))
+            session = await asyncio.to_thread(parse, Path(fpath))
             for evt in session.events:
                 d = _redact_event(evt.to_dict())
                 d["project"] = proj
@@ -658,7 +682,7 @@ async def ws_master(websocket: WebSocket):
 
             for s in active:
                 try:
-                    session = parse(Path(s.file_path))
+                    session = await asyncio.to_thread(parse, Path(s.file_path))
                     proj = s.project_name
                     prev_count = last_event_counts.get(s.file_path, 0)
 
@@ -740,7 +764,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Launch the agentstv web dashboard.",
     )
     parser.add_argument("--port", type=int, default=8420, help="Port to listen on (default: 8420)")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for LAN access)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
     parser.add_argument("--public", action="store_true", help="Redact secrets, API keys, and full paths")
     parser.add_argument("--llm", dest="llm_provider", help="LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")

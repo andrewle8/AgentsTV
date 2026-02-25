@@ -149,7 +149,8 @@ function connectMasterWS() {
         statusEl, liveBadge
     );
     ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
         if (msg.type === 'delta' && state.session && msg.events.length > 0) {
             state.session.events.push(...msg.events);
             Object.assign(state.session.agents, msg.agents);

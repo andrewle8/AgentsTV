@@ -214,7 +214,7 @@ let retryDelay = 1000;
 function showOverlayError(msg) {
     const root = document.getElementById('overlay-root');
     if (!root) return;
-    root.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef5350;font-size:18px;font-family:monospace;text-align:center;padding:20px;">${msg}</div>`;
+    root.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef5350;font-size:18px;font-family:monospace;text-align:center;padding:20px;">${esc(msg)}</div>`;
 }
 
 async function init() {
@@ -283,7 +283,8 @@ function connectWS() {
     });
 
     ws.addEventListener('message', (e) => {
-        const msg = JSON.parse(e.data);
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
 
         if (msg.type === 'full') {
             session = msg.data;
@@ -291,6 +292,9 @@ function connectWS() {
             if (config.chat) renderAllChatMessages(session);
         } else if (msg.type === 'delta' && session) {
             session.events.push(...msg.events);
+            if (session.events.length > 2000) {
+                session.events = session.events.slice(-2000);
+            }
             session.agents = msg.agents;
 
             for (const evt of msg.events) {

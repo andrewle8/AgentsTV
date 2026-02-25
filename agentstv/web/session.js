@@ -261,7 +261,8 @@ function connectSessionWS(filePath) {
         statusEl, liveBadge
     );
     ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
         if (msg.type === 'full') {
             state.session = msg.data;
             initFilters();
