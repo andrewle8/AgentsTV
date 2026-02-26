@@ -108,11 +108,31 @@ export function drawPixelScene(canvas, seed, frame, isLarge) {
     // Camera angle varies per session: 0=back, 1=side, 2=front
     const viewAngle = seed % 3;
 
-    // Chair
-    ctx.fillStyle = darken(palette.chair, 20);
+    // Chair — back, seat, armrests, and pedestal base
+    const chairDark = darken(palette.chair, 20);
+    const chairColor = palette.chair;
+    const chairLight = darken(palette.chair, -10);
+    // Chair back (tall panel behind character)
+    ctx.fillStyle = chairDark;
     ctx.fillRect(charX - px * 2, charY - px * 4, px * 14, px * 8);
-    ctx.fillStyle = palette.chair;
+    ctx.fillStyle = chairColor;
     ctx.fillRect(charX - px, charY - px * 3, px * 12, px * 6);
+    // Seat cushion (horizontal pad the character sits on)
+    ctx.fillStyle = chairDark;
+    ctx.fillRect(charX - px * 2, charY + px * 4, px * 14, px * 3);
+    ctx.fillStyle = chairColor;
+    ctx.fillRect(charX - px, charY + px * 4, px * 12, px * 2);
+    // Armrests (small side pieces)
+    ctx.fillStyle = chairLight;
+    ctx.fillRect(charX - px * 3, charY + px * 1, px * 2, px * 4);
+    ctx.fillRect(charX + px * 11, charY + px * 1, px * 2, px * 4);
+    // Chair pedestal (single leg + base)
+    ctx.fillStyle = '#333340';
+    const pedX = charX + px * 4.5;
+    ctx.fillRect(pedX, charY + px * 7, px, deskY + px * 4 - (charY + px * 7));
+    // Wheeled base
+    ctx.fillStyle = '#2a2a35';
+    ctx.fillRect(pedX - px * 3, deskY + px * 3, px * 7, px);
 
     // Always draw monitors first, then character on top — the character
     // sits between the viewer and the monitor in all camera angles.
