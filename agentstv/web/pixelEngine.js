@@ -109,27 +109,28 @@ export function drawPixelScene(canvas, seed, frame, isLarge) {
     const viewAngle = seed % 3;
 
     // Chair — back, seat, armrests, and pedestal base
+    // Body bottom is at charY - px across all views, so seat meets it there.
     const chairDark = darken(palette.chair, 20);
     const chairColor = palette.chair;
     const chairLight = darken(palette.chair, -10);
-    // Chair back (tall panel behind character)
+    // Chair back (tall panel behind character, frames shoulders)
     ctx.fillStyle = chairDark;
-    ctx.fillRect(charX - px * 2, charY - px * 4, px * 14, px * 8);
+    ctx.fillRect(charX - px * 2, charY - px * 7, px * 14, px * 9);
     ctx.fillStyle = chairColor;
-    ctx.fillRect(charX - px, charY - px * 3, px * 12, px * 6);
-    // Seat cushion (horizontal pad the character sits on)
+    ctx.fillRect(charX - px, charY - px * 6, px * 12, px * 7);
+    // Seat cushion (right at body bottom — character drawn on top hides overlap)
     ctx.fillStyle = chairDark;
-    ctx.fillRect(charX - px * 2, charY + px * 4, px * 14, px * 3);
+    ctx.fillRect(charX - px * 2, charY - px * 1, px * 14, px * 3);
     ctx.fillStyle = chairColor;
-    ctx.fillRect(charX - px, charY + px * 4, px * 12, px * 2);
-    // Armrests (small side pieces)
+    ctx.fillRect(charX - px, charY - px * 0.5, px * 12, px * 2);
+    // Armrests (at elbow height, mid-torso)
     ctx.fillStyle = chairLight;
-    ctx.fillRect(charX - px * 3, charY + px * 1, px * 2, px * 4);
-    ctx.fillRect(charX + px * 11, charY + px * 1, px * 2, px * 4);
+    ctx.fillRect(charX - px * 3, charY - px * 4, px * 2, px * 4);
+    ctx.fillRect(charX + px * 11, charY - px * 4, px * 2, px * 4);
     // Chair pedestal (single leg + base)
     ctx.fillStyle = '#333340';
     const pedX = charX + px * 4.5;
-    ctx.fillRect(pedX, charY + px * 7, px, deskY + px * 4 - (charY + px * 7));
+    ctx.fillRect(pedX, charY + px * 2, px, deskY + px * 4 - (charY + px * 2));
     // Wheeled base
     ctx.fillStyle = '#2a2a35';
     ctx.fillRect(pedX - px * 3, deskY + px * 3, px * 7, px);
