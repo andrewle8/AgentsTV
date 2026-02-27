@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import random
@@ -197,13 +196,10 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 @app.get("/api/ollama-models")
-async def get_ollama_models(request: Request):
-    """Return list of available Ollama model names."""
+async def get_ollama_models():
+    """Return list of locally available Ollama model names."""
     try:
-        base = request.query_params.get("url", "").strip().rstrip("/") or llm.OLLAMA_URL
-        if not base.startswith(("http://", "https://")):
-            return {"models": [], "error": "Invalid URL"}
-        url = f"{base}/api/tags"
+        url = f"{llm.OLLAMA_URL}/api/tags"
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -294,11 +290,14 @@ async def put_settings(request: Request):
     except Exception:
         return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
 
-    # Validate Ollama URL format
+    # Validate Ollama URL format and restrict to loopback
     ollama_url = body.get("ollama_url")
     if ollama_url is not None:
         if not isinstance(ollama_url, str) or not ollama_url.startswith(("http://", "https://")):
             return JSONResponse({"error": "Invalid Ollama URL — must start with http:// or https://"}, status_code=400)
+        parsed_url = urlparse(ollama_url)
+        if parsed_url.hostname not in ("localhost", "127.0.0.1", "::1", None):
+            return JSONResponse({"error": "Ollama URL must point to localhost"}, status_code=400)
 
     # Validate API key lengths
     for key_name in ("openai_key", "anthropic_key"):
@@ -776,10 +775,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anthropic-key", help="Anthropic API key (env: AGENTSTV_ANTHROPIC_KEY)")
     parser.add_argument("--anthropic-model", help="Anthropic model name (default: claude-haiku-4-5-20241022)")
     parser.add_argument("--low-power", action="store_true", help="Low-power mode: smaller batches, longer intervals")
-    parser.add_argument("--remote", metavar="OLLAMA_HOST", nargs="?", const="auto",
-                        help="Remote mode: bind to LAN and use a remote Ollama. "
-                             "Pass an IP/hostname (e.g. --remote 192.168.1.5) or "
-                             "just --remote to use the last saved remote URL.")
     return parser
 
 
@@ -794,28 +789,8 @@ def main(args: list[str] | None = None) -> None:
 
     parsed = _build_arg_parser().parse_args(args)
 
-    # --remote: bind to LAN and point at a remote Ollama
-    if parsed.remote is not None:
-        host = "0.0.0.0"
-        remote_cfg_path = Path.home() / ".agentstv" / "remote.json"
-        if parsed.remote != "auto":
-            # User gave an IP/hostname — build Ollama URL and save it
-            remote_host = parsed.remote.rstrip("/")
-            if not remote_host.startswith("http"):
-                remote_host = f"http://{remote_host}:11434"
-            remote_cfg_path.parent.mkdir(parents=True, exist_ok=True)
-            remote_cfg_path.write_text(json.dumps({"ollama_url": remote_host}))
-        elif remote_cfg_path.exists():
-            remote_host = json.loads(remote_cfg_path.read_text()).get("ollama_url", "")
-        else:
-            print("agentstv: no saved remote config. Use --remote <IP> first (e.g. --remote 192.168.1.5)")
-            sys.exit(1)
-        if not parsed.ollama_url:
-            parsed.ollama_url = remote_host
-        print(f"agentstv: remote mode — Ollama at {parsed.ollama_url}")
-
     port = parsed.port
-    host = parsed.host if parsed.remote is None else host
+    host = parsed.host
     PUBLIC_MODE = parsed.public
 
     llm.configure(

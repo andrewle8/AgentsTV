@@ -54,7 +54,8 @@
       "Bash(git status:*)",
       "Bash(tail:*)",
       "Bash(cd /f/Projects/agent-replay && rm -rf dist/ && python -m build 2>&1 | tail -3 && python -m twine upload dist/* 2>&12222)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(gh auth:*)"
     ]
   }
 }

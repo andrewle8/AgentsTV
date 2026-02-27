@@ -232,23 +232,6 @@ export function initSettings() {
         if (e.target === this) closeSettings();
     });
     document.getElementById('s-provider').addEventListener('change', toggleProviderFields);
-    document.getElementById('s-ollama-url').addEventListener('change', async () => {
-        const url = document.getElementById('s-ollama-url').value.replace(/\/+$/, '');
-        if (!url) return;
-        try {
-            const resp = await fetch('/api/ollama-models?' + new URLSearchParams({ url }));
-            const data = await resp.json();
-            if (data.models && data.models.length > 0) {
-                const select = document.getElementById('s-ollama-model');
-                const fallback = document.getElementById('s-ollama-model-fallback');
-                select.innerHTML = data.models.map(m =>
-                    `<option value="${esc(m)}">${esc(m)}</option>`
-                ).join('');
-                select.style.display = '';
-                fallback.style.display = 'none';
-            }
-        } catch (_) { /* keep existing model list */ }
-    });
     document.getElementById('settings-form').addEventListener('submit', saveSettings);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeSettings();

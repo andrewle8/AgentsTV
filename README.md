@@ -68,31 +68,6 @@ agentstv --no-browser            # Don't auto-open browser
 
 Session logs are discovered from `~/.claude/projects/`. Override with `AGENTSTV_DATA_DIR=/path/to/logs`.
 
-## Remote LLM Setup
-
-You can run AgentsTV on the machine where your sessions live and offload LLM inference to a separate machine (e.g. a MacBook running Ollama). No file syncing required -- only lightweight API calls go over the network.
-
-**On the LLM machine** (e.g. MacBook with Ollama):
-
-```bash
-# Allow remote connections
-OLLAMA_HOST=0.0.0.0 ollama serve
-```
-
-**On the Claude Code machine** (where your sessions are):
-
-```bash
-# First time — pass the IP of your LLM machine
-agentstv --remote <llm-machine-ip> --ollama-model qwen3:8b
-
-# After that — remembers the remote config
-agentstv --remote
-```
-
-Then open `http://<claude-code-machine-ip>:8420` from any browser on your network.
-
-This is useful when your coding machine has no GPU or you want to keep LLM inference on a power-efficient device like an Apple Silicon Mac. The `--remote` flag sets `--host 0.0.0.0` and saves the remote Ollama URL to `~/.agentstv/remote.json`.
-
 ## Supported Formats
 
 - **Claude Code** JSONL transcripts (full support)
