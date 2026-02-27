@@ -196,10 +196,13 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 @app.get("/api/ollama-models")
-async def get_ollama_models():
-    """Return list of locally available Ollama model names."""
+async def get_ollama_models(request: Request):
+    """Return list of available Ollama model names."""
     try:
-        url = f"{llm.OLLAMA_URL}/api/tags"
+        base = request.query_params.get("url", "").strip().rstrip("/") or llm.OLLAMA_URL
+        if not base.startswith(("http://", "https://")):
+            return {"models": [], "error": "Invalid URL"}
+        url = f"{base}/api/tags"
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -290,14 +293,11 @@ async def put_settings(request: Request):
     except Exception:
         return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
 
-    # Validate Ollama URL format and restrict to loopback
+    # Validate Ollama URL format
     ollama_url = body.get("ollama_url")
     if ollama_url is not None:
         if not isinstance(ollama_url, str) or not ollama_url.startswith(("http://", "https://")):
             return JSONResponse({"error": "Invalid Ollama URL — must start with http:// or https://"}, status_code=400)
-        parsed_url = urlparse(ollama_url)
-        if parsed_url.hostname not in ("localhost", "127.0.0.1", "::1", None):
-            return JSONResponse({"error": "Ollama URL must point to localhost"}, status_code=400)
 
     # Validate API key lengths
     for key_name in ("openai_key", "anthropic_key"):
