@@ -82,12 +82,16 @@ OLLAMA_HOST=0.0.0.0 ollama serve
 **On the Claude Code machine** (where your sessions are):
 
 ```bash
-agentstv --host 0.0.0.0 --ollama-url http://<llm-machine-ip>:11434 --ollama-model qwen3:8b
+# First time — pass the IP of your LLM machine
+agentstv --remote <llm-machine-ip> --ollama-model qwen3:8b
+
+# After that — remembers the remote config
+agentstv --remote
 ```
 
 Then open `http://<claude-code-machine-ip>:8420` from any browser on your network.
 
-This is useful when your coding machine has no GPU or you want to keep LLM inference on a power-efficient device like an Apple Silicon Mac.
+This is useful when your coding machine has no GPU or you want to keep LLM inference on a power-efficient device like an Apple Silicon Mac. The `--remote` flag sets `--host 0.0.0.0` and saves the remote Ollama URL to `~/.agentstv/remote.json`.
 
 ## Supported Formats
 

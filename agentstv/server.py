@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import random
@@ -775,6 +776,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anthropic-key", help="Anthropic API key (env: AGENTSTV_ANTHROPIC_KEY)")
     parser.add_argument("--anthropic-model", help="Anthropic model name (default: claude-haiku-4-5-20241022)")
     parser.add_argument("--low-power", action="store_true", help="Low-power mode: smaller batches, longer intervals")
+    parser.add_argument("--remote", metavar="OLLAMA_HOST", nargs="?", const="auto",
+                        help="Remote mode: bind to LAN and use a remote Ollama. "
+                             "Pass an IP/hostname (e.g. --remote 192.168.1.5) or "
+                             "just --remote to use the last saved remote URL.")
     return parser
 
 
@@ -789,8 +794,28 @@ def main(args: list[str] | None = None) -> None:
 
     parsed = _build_arg_parser().parse_args(args)
 
+    # --remote: bind to LAN and point at a remote Ollama
+    if parsed.remote is not None:
+        host = "0.0.0.0"
+        remote_cfg_path = Path.home() / ".agentstv" / "remote.json"
+        if parsed.remote != "auto":
+            # User gave an IP/hostname — build Ollama URL and save it
+            remote_host = parsed.remote.rstrip("/")
+            if not remote_host.startswith("http"):
+                remote_host = f"http://{remote_host}:11434"
+            remote_cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            remote_cfg_path.write_text(json.dumps({"ollama_url": remote_host}))
+        elif remote_cfg_path.exists():
+            remote_host = json.loads(remote_cfg_path.read_text()).get("ollama_url", "")
+        else:
+            print("agentstv: no saved remote config. Use --remote <IP> first (e.g. --remote 192.168.1.5)")
+            sys.exit(1)
+        if not parsed.ollama_url:
+            parsed.ollama_url = remote_host
+        print(f"agentstv: remote mode — Ollama at {parsed.ollama_url}")
+
     port = parsed.port
-    host = parsed.host
+    host = parsed.host if parsed.remote is None else host
     PUBLIC_MODE = parsed.public
 
     llm.configure(
