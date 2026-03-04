@@ -296,7 +296,7 @@ async def put_settings(request: Request):
         if not isinstance(ollama_url, str) or not ollama_url.startswith(("http://", "https://")):
             return JSONResponse({"error": "Invalid Ollama URL — must start with http:// or https://"}, status_code=400)
         parsed_url = urlparse(ollama_url)
-        if parsed_url.hostname not in ("localhost", "127.0.0.1", "::1", None):
+        if parsed_url.hostname not in ("localhost", "127.0.0.1", "::1"):
             return JSONResponse({"error": "Ollama URL must point to localhost"}, status_code=400)
 
     # Validate API key lengths
