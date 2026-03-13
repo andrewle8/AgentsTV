@@ -6,7 +6,7 @@
 
 **Turn your AI coding agent sessions into a Twitch-style pixel art live stream.**
 
-Your Claude Code sessions are already generating thousands of events. AgentsTV turns them into something you can actually watch -- pixel art characters coding in real-time, simulated Twitch chat reacting to what the agent does, esports-style narration, and a Master Control Room when you're running multiple sessions.
+Your AI coding sessions already generate thousands of events. AgentsTV turns them into something you can actually watch -- pixel art characters coding in real-time, simulated Twitch chat reacting to what the agent does, esports-style narration, and a multi-session Master Control Room.
 
 ![AgentsTV session view](https://raw.githubusercontent.com/andrewle8/AgentsTV/master/screenshot.png?v=3)
 
@@ -19,18 +19,18 @@ pip install agentstv
 agentstv
 ```
 
-That's it. The dashboard auto-discovers your Claude Code session logs and opens in your browser.
+The dashboard auto-discovers your session logs and opens in your browser.
 
 ### Add AI Chat (optional)
 
-AgentsTV can use a local LLM via [Ollama](https://ollama.com/) for viewer chat, narrator commentary, and interactive Q&A:
+Hook up a local LLM via [Ollama](https://ollama.com/) for viewer chat, narrator commentary, and interactive Q&A:
 
 ```bash
 ollama pull qwen3:14b
 agentstv --llm ollama --ollama-model qwen3:14b
 ```
 
-Without Ollama, everything works -- viewer chat uses built-in fallback messages.
+Without Ollama, everything still works -- chat falls back to built-in messages.
 
 | Hardware | Model | Notes |
 |---|---|---|
@@ -38,22 +38,22 @@ Without Ollama, everything works -- viewer chat uses built-in fallback messages.
 | MacBook / Laptop | `qwen3:8b` | Good balance of quality and speed |
 | Low VRAM / older GPU | `phi4-mini` | Lightweight, surprisingly capable |
 
-Also supports OpenAI and Anthropic as cloud LLM providers. Configure via CLI flags or the in-app settings panel.
+Also supports OpenAI and Anthropic as cloud providers -- configure via CLI flags or the in-app settings panel.
 
 ## Features
 
-- **Pixel art webcam** -- Procedurally generated coding scenes with idle animations, desk decorations, weather effects, and event reactions (error shakes, completion confetti, spawn rings, thinking bubbles)
-- **Viewer chat** -- Simulated Twitch chat where LLM-generated viewers react to what the agent is doing
-- **Interactive chat** -- Ask questions about what the agent is working on and get context-aware answers
-- **Narrator bot** -- Esports-style play-by-play commentary on agent activity
+- **Pixel art webcam** -- Procedurally generated scenes with idle animations, weather effects, and event reactions (error shakes, completion confetti, thinking bubbles)
+- **Viewer chat** -- Simulated Twitch chat reacting to what the agent is doing
+- **Interactive chat** -- Ask questions about the current session and get context-aware answers
+- **Narrator bot** -- Esports-style play-by-play commentary
 - **Auto stream titles** -- Generated from recent activity (e.g. `Coding / Python / main`)
-- **Master Control Room** -- Multi-monitor view aggregating all active sessions with status LEDs and alert lights
-- **Session replay** -- Play back completed sessions with seek, speed control (0.5x-8x), and full event recreation
-- **Clip recording** -- Record and download WebM clips of interesting moments
-- **OBS overlay** -- Browser Source page at `/overlay.html` for compositing over your stream
+- **Master Control Room** -- Multi-monitor dashboard for all active sessions
+- **Session replay** -- Seek, speed control (0.5x-8x), full event recreation
+- **Clip recording** -- Record and download WebM clips
+- **OBS overlay** -- Browser Source at `/overlay.html` for stream compositing
 - **Sound effects** -- Keystrokes, error buzzer, completion chime, chat pops
-- **Public mode** -- `--public` flag scrubs API keys, tokens, paths, and secrets server-side before sharing
-- **Dark / light theme**, keyboard shortcuts (`?` to view), search and sort, stream alert toasts
+- **Public mode** -- `--public` scrubs secrets server-side before sharing
+- **Dark/light theme**, keyboard shortcuts (`?`), search, sort, alert toasts
 
 ## Usage
 
@@ -66,7 +66,7 @@ agentstv --low-power             # Reduce LLM batch sizes for laptops
 agentstv --no-browser            # Don't auto-open browser
 ```
 
-Session logs are discovered from `~/.claude/projects/`. Override with `AGENTSTV_DATA_DIR=/path/to/logs`.
+Logs are discovered from `~/.claude/projects/`. Override with `AGENTSTV_DATA_DIR=/path/to/logs`.
 
 ## Supported Formats
 
@@ -74,15 +74,9 @@ Session logs are discovered from `~/.claude/projects/`. Override with `AGENTSTV_
 - **Codex CLI** session logs (experimental)
 - **Gemini CLI** session logs (experimental)
 
-## About
-
-The idea started as a simple TUI to replay Claude Code session logs. I built the first version, went to bed, and woke up wanting something completely different: a Twitch-style live dashboard with pixel art characters, LLM-powered chat, and streaming overlays. The full web app was built and published in about 12 hours.
-
-Built with Claude Code. I made the architectural decisions and directed the implementation across Python, JavaScript, HTML, and CSS.
-
 ## Contributing
 
-Contributions are welcome! AgentsTV is MIT-licensed and open to PRs.
+PRs welcome. MIT-licensed.
 
 ```bash
 git clone https://github.com/andrewle8/AgentsTV.git
