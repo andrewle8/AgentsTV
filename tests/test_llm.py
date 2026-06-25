@@ -56,7 +56,7 @@ def test_is_ready_ollama_with_model():
 
 def test_key_masking():
     """Long API keys are masked in get_settings() output."""
-    configure(provider="openai", openai_key="sk-abcdef1234567890xyz")
+    configure(provider="openai", openai_key="sk-abcdef1234567890xyz")  # gitleaks:allow - fake fixture, not a real key
     settings = get_settings()
     masked = settings["openai_key"]
     # Starts with first 3 chars, ends with last 4
